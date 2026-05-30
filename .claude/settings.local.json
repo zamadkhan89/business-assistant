@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Process -Id 26436 -ErrorAction SilentlyContinue)",
+      "Bash(ls \"C:/Program Files/PostgreSQL/16/bin/\" | grep -i libpq)",
+      "Read(//c/Program Files/PostgreSQL/16/bin/**)",
+      "Bash(.venv/Scripts/pip install *)"
+    ]
+  }
+}

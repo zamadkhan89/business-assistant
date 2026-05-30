@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+test_ba.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Alembic
+# (versions tracked intentionally)
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+business_assistant.db
+
+# SQLite dev databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# ChromaDB local store
+chroma_db/
+chromadb/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel
+.vercel
+
+# Google Drive temp files
+.tmp.driveupload/
+.tmp.drivedownload/

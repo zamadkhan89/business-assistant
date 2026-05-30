@@ -1,0 +1,133 @@
+"""Schema Agent: links user query to relevant DuckDB tables."""
+from __future__ import annotations
+
+import logging
+
+from langchain_core.messages import AIMessage
+
+from app.agents.state import AgentState
+from app.data.duckdb_connector import describe_all_tables, describe_user_tables
+
+logger = logging.getLogger(__name__)
+
+_chroma_collection = None
+
+
+def init_chroma() -> None:
+    """Build a ChromaDB collection of table+column descriptions (call once at startup)."""
+    global _chroma_collection
+    try:
+        import chromadb  # noqa: PLC0415
+
+        client = chromadb.EphemeralClient()
+        collection = client.get_or_create_collection("schema_embeddings")
+
+        all_tables = describe_all_tables()
+        docs, ids = [], []
+        for table_name, info in all_tables.items():
+            cols = ", ".join(c["column"] for c in info["schema"])
+            docs.append(f"Table {table_name}: columns are {cols}")
+            ids.append(table_name)
+
+        if docs:
+            collection.upsert(documents=docs, ids=ids)
+
+        _chroma_collection = collection
+        logger.info("[schema] ChromaDB initialised with %d tables", len(docs))
+    except Exception as exc:
+        logger.warning("[schema] ChromaDB unavailable (%s); will send full schema to LLM", exc)
+
+
+def search_schema(query: str, user_id: str, n_results: int = 4) -> dict:
+    """Return relevant table schemas for *query*, scoped to *user_id*."""
+    user_tables = describe_user_tables(user_id)
+
+    if _chroma_collection is not None:
+        try:
+            results = _chroma_collection.query(
+                query_texts=[query],
+                n_results=min(n_results, max(1, len(user_tables))),
+            )
+            relevant_names = results["ids"][0]
+            # Only return tables this user can actually access
+            filtered = {name: user_tables[name] for name in relevant_names if name in user_tables}
+            if filtered:
+                return filtered
+        except Exception as exc:
+            logger.warning("[schema] ChromaDB query failed (%s); returning full user schema", exc)
+
+    return user_tables
+
+
+def refresh_chroma() -> None:
+    """Re-embed all tables after schema changes. No-op if ChromaDB is unavailable."""
+    global _chroma_collection
+    if _chroma_collection is None:
+        return
+    try:
+        all_tables = describe_all_tables()
+        docs, ids = [], []
+        for table_name, info in all_tables.items():
+            cols = ", ".join(c["column"] for c in info["schema"])
+            docs.append(f"Table {table_name}: columns are {cols}")
+            ids.append(table_name)
+        if docs:
+            _chroma_collection.upsert(documents=docs, ids=ids)
+        logger.info("[schema] ChromaDB refreshed with %d tables", len(docs))
+    except Exception as exc:
+        logger.warning("[schema] refresh_chroma failed: %s", exc)
+
+
+def schema_agent_node(state: AgentState) -> dict:
+    """LangGraph node: populate schema_context from the latest user message."""
+    # Use the supervisor's cleaned/corrected question for better embedding search.
+    # Fall back to the raw last human message if cleaned_question is not set.
+    user_query = (
+        state.get("cleaned_question")
+        or next((m.content for m in reversed(state["messages"]) if m.type == "human"), "")
+    )
+    user_id = state.get("user_id", "")
+    logger.info("[schema] Searching schema for user=%s query=%s", user_id[:8], user_query[:80])
+
+    schema_context = search_schema(user_query, user_id)
+    logger.info("[schema] Found %d relevant tables: %s", len(schema_context), list(schema_context))
+
+    if not schema_context:
+        reply = AIMessage(
+            content="I couldn't find any relevant tables for your question. "
+            "Please try rephrasing or ask about customers, orders, or products."
+        )
+        return {
+            "messages": [reply],
+            "schema_context": {},
+            "current_step": "done",
+            "steps_taken": ["schema_agent"],
+            "error": "no_schema",
+        }
+
+    lines = []
+    for table, info in schema_context.items():
+        cols = ", ".join(f"{c['column']} ({c['type']})" for c in info["schema"])
+        lines.append(f"- {table}: {cols}")
+    schema_summary = "\n".join(lines)
+
+    glossary = state.get("glossary_context", [])
+    glossary_text = ""
+    if glossary:
+        glossary_text = "\n\n**Business glossary:**\n" + "\n".join(
+            f"- {g['term']}: {g['definition']}" for g in glossary
+        )
+
+    reply = AIMessage(
+        content=(
+            f"I found the following relevant tables for your query:\n\n{schema_summary}"
+            f"{glossary_text}\n\nNow I'll generate the SQL query."
+        )
+    )
+
+    return {
+        "messages": [reply],
+        "schema_context": schema_context,
+        "current_step": "schema_done",
+        "steps_taken": ["schema_agent"],
+    }

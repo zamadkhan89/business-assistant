@@ -1,0 +1,45 @@
+# ── Day 1: Core backend + auth ─────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+email-validator
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt<4.0
+sqlalchemy[asyncio]
+alembic
+asyncpg
+aiosqlite
+
+# ── Day 1: Testing ──────────────────────────────────────────────────────────
+pytest
+pytest-asyncio
+httpx
+
+# ── Days 3-6: LangGraph + LangChain ────────────────────────────────────────
+langchain
+langchain-core
+langchain-community
+langchain-anthropic
+langchain-openai
+langgraph
+langgraph-checkpoint-postgres
+anthropic
+openai
+# google-generativeai and langchain-google-genai are optional (Google LLM provider).
+# Install separately if needed: pip install google-generativeai langchain-google-genai
+
+# ── Days 4-8: Data + Analysis ───────────────────────────────────────────────
+# chromadb: install separately on Day 4 to avoid C++ build conflicts on Windows.
+# Run: pip install chromadb==0.5.23
+duckdb
+plotly
+pandas
+sqlparse
+
+# ── Day 9: File uploads ─────────────────────────────────────────────────────
+python-multipart
+
+# ── AWS Athena / Glue ────────────────────────────────────────────────────────
+boto3
