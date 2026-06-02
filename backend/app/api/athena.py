@@ -3,7 +3,7 @@ Athena API — browse the AWS Glue Data Catalog and run Athena queries.
 
 Credential resolution (all active sets are used together):
   - Personal credentials  (athena_configs.user_id = current user's ID)
-  - Global shared creds   (athena_configs.user_id = '__global__')
+  - Global shared creds   (athena_configs.is_global = TRUE, user_id = NULL)
   - Environment variables (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) — fallback
     when neither personal nor global is configured in the DB.
 
@@ -204,7 +204,7 @@ async def athena_status(
     from app.core.config import settings
 
     personal = await _fetch_cfg(current_user.id, db)
-    shared   = await _fetch_cfg(_GLOBAL_ID, db)
+    shared   = await _fetch_global_cfg(db)
 
     has_personal = bool(personal and personal.aws_access_key_id and personal.aws_secret_access_key)
     has_global   = bool(shared   and shared.aws_access_key_id   and shared.aws_secret_access_key)
