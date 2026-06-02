@@ -1,6 +1,42 @@
 # Business Assistant — Complete Onboarding & Feature Guide
 
 > This file covers everything you need to understand the system, demo it, and extend it.
+> **New here? Start at Section 0 — it tells you exactly which document to read first and why.**
+
+---
+
+## 0. Documentation Map — Where to Start
+
+There are several documents in this project. Each has a different purpose. Here is the order to read them and what each one is for.
+
+### Reading order for a new person
+
+| Step | Document | Purpose | Time |
+|---|---|---|---|
+| 1 | **This file** (`ONBOARDING.md`) | Complete hands-on guide — what the system does, how every feature works, how to run it, how to inspect the data | 20 min read |
+| 2 | [`README.md`](README.md) | Quick-reference summary — tech stack, setup commands, feature list, security controls | 5 min |
+| 3 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Deep technical design — agent responsibilities, state flow, data layer, auth, design decisions with trade-offs | 15 min |
+| 4 | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | Timed 8-minute demo script — exact steps to show the system to anyone, anticipated questions and answers | Before any demo |
+| 5 | [`PROGRESS.md`](PROGRESS.md) | Full build log — every session, every decision, what was built on which day | For historical context |
+
+### Other documents (situational)
+
+| Document | Use it when… |
+|---|---|
+| [`MASTER_PROMPT.md`](MASTER_PROMPT.md) | You want to understand the original 14-day build plan, locked architectural decisions, and the "why" behind major choices |
+| [`docs/SLIDES.md`](docs/SLIDES.md) | You are preparing a presentation or defense — contains 8 slides with speaker notes and timing |
+| [`CLAUDE.md`](CLAUDE.md) | You are starting a Claude Code AI session — this is the machine-readable project brief that Claude reads first |
+
+### What each document does NOT cover
+
+- `ONBOARDING.md` does not explain how to run tests in detail → see `README.md`
+- `README.md` does not explain the internal agent design → see `ARCHITECTURE.md`
+- `ARCHITECTURE.md` does not contain demo steps → see `DEMO_SCRIPT.md`
+- `PROGRESS.md` is a log, not a guide — do not start here
+
+### One-sentence summary of the whole system
+
+> Business Assistant takes a plain-English question, finds the right database tables using AI embeddings, generates SQL, optionally asks for your approval, executes the query on DuckDB or AWS Athena, and returns an interactive chart with a written summary — all in one conversation.
 
 ---
 
@@ -345,7 +381,92 @@ python -m pytest          # all tests must pass
 
 ---
 
-## 15. Known Limitations
+## 15. Inspecting the Databases (for demos and debugging)
+
+The system uses two databases for different purposes. Here is how to open and browse each one.
+
+---
+
+### PostgreSQL — users, conversations, glossary, saved queries, routines, admin data
+
+**Tool: pgAdmin 4** — installed automatically with PostgreSQL on Windows.
+
+1. Open **pgAdmin 4** from the Start menu
+2. Connect to server: host `localhost`, port `5432`, username `postgres`, password `postgres`
+3. Navigate: `Servers → PostgreSQL 16 → Databases → business_assistant → Schemas → public → Tables`
+4. Right-click any table → **View/Edit Data → All Rows**
+
+**Key tables to show a supervisor:**
+
+| Table | What it contains |
+|---|---|
+| `users` | All registered accounts, email, admin/blocked status, streaming/approval settings, storage quota |
+| `threads` | Every conversation (id, user_id, title, timestamps) |
+| `messages` | Every message sent and received, with metadata (chart JSON, SQL, agent steps) |
+| `glossary_entries` | User-defined business terms and their definitions |
+| `saved_queries` | Bookmarked questions with stored SQL and results |
+| `routines` | Named sets of recurring questions |
+| `admin_audit_log` | Every admin action (block, delete, settings change) with timestamp and actor |
+| `athena_configs` | AWS Athena credentials per user (and global `__global__` entry) |
+| `table_metadata` | Table and column descriptions, KPI definitions, join hints added via Catalog |
+
+---
+
+### DuckDB — analytical data (CSV uploads, Northwind sample, Athena ingested tables)
+
+DuckDB is a single file at `backend/business_assistant.db`. There is no server — it is embedded in the Python process.
+
+**Tool: DBeaver Community** (free, supports DuckDB natively)
+
+1. Download from **dbeaver.io** → install
+2. File → New Database Connection → search **DuckDB** → Next
+3. Database: browse to `d:\business-assistant\backend\business_assistant.db`
+4. Click **Finish** → expand the connection to browse tables
+
+**Key tables/views in DuckDB:**
+
+| Table | What it contains |
+|---|---|
+| `customers` | Northwind sample customers (built-in) |
+| `products` | Northwind sample products (built-in) |
+| `orders` | Northwind sample orders (built-in) |
+| `order_items` | Northwind sample order line items (built-in) |
+| `_dataset_ownership` | Maps every uploaded table to its owning `user_id` |
+| `u{prefix}_{name}` | User-uploaded CSV tables (e.g. `u3a2b_sales_data`) |
+| `_athena_direct_refs` | Tables registered for direct Athena query (schema only, no data) |
+
+> **Note:** DuckDB is an in-process database — it is only accessible when the backend is NOT running (both processes cannot open the same file simultaneously on Windows). Stop the backend first before opening it in DBeaver.
+
+---
+
+### Built-in Admin Panel — quickest option, no extra tools needed
+
+If the backend and frontend are running, open **http://localhost:3001/admin** (admin account required).
+
+The admin panel shows in a clean UI:
+- All registered users with their dataset count, thread count, and storage used
+- Per-user storage bar and quota setting
+- User datasets (table names + row counts)
+- User conversations (titles + timestamps)
+- Feature toggles: Streaming enabled / SQL Approval required
+- Full admin audit log with timestamps
+
+This is the cleanest thing to show a supervisor — it runs directly in the browser with no extra tools.
+
+---
+
+### FastAPI Swagger UI — inspect and test every API endpoint
+
+With the backend running, open **http://localhost:8000/docs**
+
+- Lists every API endpoint with its request/response schema
+- You can run live requests directly from the browser (click an endpoint → Try it out → Execute)
+- Useful for showing how data flows through the system at the API level
+- Requires a JWT token for protected endpoints: log in first via `/auth/login`, copy the `access_token`, then click **Authorize** at the top and paste it
+
+---
+
+## 16. Known Limitations — and Why They Exist
 
 | Limitation | Why it exists | What you would do with more time |
 |---|---|---|
@@ -357,7 +478,9 @@ python -m pytest          # all tests must pass
 
 ---
 
-## 16. File Map — Where Is Everything
+## 17. File Map — Where Is Everything
+
+> For a higher-level explanation of the system design, read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```
 backend/
