@@ -11,6 +11,8 @@ class AthenaConfig(Base):
     __tablename__ = "athena_configs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    # No FK constraint by design: user_id is either a real UUID or the sentinel
+    # string "__global__" for shared admin credentials. A FK would reject "__global__".
     user_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     aws_region: Mapped[str] = mapped_column(String, default="us-east-1")
     aws_access_key_id: Mapped[str] = mapped_column(String, nullable=False)
