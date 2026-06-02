@@ -63,7 +63,7 @@ export default async function HomePage() {
             <div className="size-8 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <Sparkles className="size-4 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg tracking-tight">DataChat</span>
+            <span className="font-bold text-lg tracking-tight">Business Assistant</span>
           </div>
           <div className="flex items-center gap-2">
             <Link
@@ -100,7 +100,7 @@ export default async function HomePage() {
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-10">
-            Ask questions about your data in plain English. DataChat generates SQL, builds charts,
+            Ask questions about your data in plain English. Business Assistant generates SQL, builds charts,
             and delivers AI-written summaries — with your approval at every step.
           </p>
 
@@ -207,7 +207,7 @@ export default async function HomePage() {
             <div className="size-5 rounded-md bg-primary flex items-center justify-center">
               <Sparkles className="size-3 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-foreground">DataChat</span>
+            <span className="font-semibold text-foreground">Business Assistant</span>
             <span className="ml-1">© 2026. All rights reserved.</span>
           </div>
           <div className="flex gap-6">

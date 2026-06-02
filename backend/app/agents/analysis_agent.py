@@ -278,7 +278,7 @@ def analysis_agent_node(state: AgentState) -> dict:
     sql = state.get("draft_sql", "")
     if not sql:
         reply = AIMessage(content="No SQL to execute.")
-        return {"messages": [reply], "steps_taken": ["analysis_agent"], "current_step": "done", "error": "no_sql"}
+        return {"messages": [reply], "steps_taken": state.get("steps_taken", []) + ["analysis_agent"], "current_step": "done", "error": "no_sql"}
 
     user_question = (
         state.get("cleaned_question")
@@ -326,7 +326,7 @@ def analysis_agent_node(state: AgentState) -> dict:
                     "messages": [reply],
                     "query_results": [],
                     "chart_json": "",
-                    "steps_taken": ["analysis_agent"], "current_step": "done",
+                    "steps_taken": state.get("steps_taken", []) + ["analysis_agent"], "current_step": "done",
                     "error": str(second_exc),
                 }
         else:
@@ -336,7 +336,7 @@ def analysis_agent_node(state: AgentState) -> dict:
                 "messages": [reply],
                 "query_results": [],
                 "chart_json": "",
-                "steps_taken": ["analysis_agent"], "current_step": "done",
+                "steps_taken": state.get("steps_taken", []) + ["analysis_agent"], "current_step": "done",
                 "error": str(first_exc),
             }
 
@@ -350,7 +350,9 @@ def analysis_agent_node(state: AgentState) -> dict:
             "messages": [reply],
             "query_results": [],
             "chart_json": "",
-            "steps_taken": ["analysis_agent"], "current_step": "done",
+            "steps_taken": state.get("steps_taken", []) + ["analysis_agent"],
+            "current_step": "done",
+            "error": "",
         }
 
     # Chart
@@ -370,6 +372,6 @@ def analysis_agent_node(state: AgentState) -> dict:
         "messages": [reply],
         "query_results": safe_records,
         "chart_json": chart_json,
-        "steps_taken": ["analysis_agent"], "current_step": "done",
+        "steps_taken": state.get("steps_taken", []) + ["analysis_agent"], "current_step": "done",
         "error": "",
     }

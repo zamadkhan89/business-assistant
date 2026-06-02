@@ -38,6 +38,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             accessToken: access_token,
             isAdmin: user.is_admin ?? false,
             isVerified: is_verified ?? user.is_verified ?? false,
+            streamingEnabled: user.streaming_enabled ?? false,
+            sqlApprovalRequired: user.sql_approval_required ?? false,
           }
         } catch (err) {
           console.error("[auth] authorize error:", err)
@@ -52,6 +54,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.accessToken = user.accessToken
         token.isAdmin = user.isAdmin
         token.isVerified = user.isVerified
+        token.streamingEnabled = user.streamingEnabled
+        token.sqlApprovalRequired = user.sqlApprovalRequired
       }
       // Allow client-side update() to refresh isVerified after email verification
       if (trigger === "update" && typeof session?.isVerified === "boolean") {
@@ -63,6 +67,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.accessToken = token.accessToken as string
       session.isAdmin = token.isAdmin as boolean
       session.isVerified = token.isVerified as boolean
+      session.streamingEnabled = token.streamingEnabled as boolean
+      session.sqlApprovalRequired = token.sqlApprovalRequired as boolean
       return session
     },
   },

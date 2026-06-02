@@ -6,10 +6,10 @@ import { v4 as uuidv4 } from "uuid"
 import Link from "next/link"
 import {
   Sparkles, Plus, Trash2, BookOpen,
-  Database, Upload, PanelLeft, Workflow, X,
+  Database, Upload, Download, PanelLeft, Workflow, X,
   Cpu, Search, Code, BarChart2, Cloud, Table2,
   Bookmark, ChevronUp, ChevronDown, ChevronsUpDown,
-  CheckSquare, Square, Filter, MessageSquare,
+  CheckSquare, Square, Filter, MessageSquare, Check, Pencil,
 } from "lucide-react"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,9 @@ const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000"
 interface Message {
   role: "user" | "assistant"
   content: string
+  status?: "done" | "needs_approval"
+  draftSql?: string
+  sqlExplanation?: string
   chartJson?: string
   executedSql?: string
   resultRows?: Record<string, unknown>[]
@@ -70,17 +73,18 @@ function SortIcon({ col, sortCol, sortDir }: { col: string; sortCol: string | nu
     : <ChevronDown className="size-3 text-primary ml-1 shrink-0" />
 }
 
-function ResultPanel({ rows, chartJson, sql, onExport, onSave }: {
+function ResultPanel({ rows, chartJson, sql, onExport }: {
   rows: Record<string, unknown>[]
   chartJson?: string
   sql?: string
   onExport?: () => void
-  onSave?: () => void
 }) {
+  const PAGE_SIZE = 50
   const [tab, setTab] = useState<ResultTab>("table")
   const [sqlOpen, setSqlOpen] = useState(false)
   const [sortCol, setSortCol] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const [page, setPage] = useState(0)
 
   const cols = rows.length > 0 ? Object.keys(rows[0]) : []
   const numCols = cols.filter((c) => typeof rows[0]?.[c] === "number")
@@ -99,6 +103,7 @@ function ResultPanel({ rows, chartJson, sql, onExport, onSave }: {
   }
 
   const sortedRows = useMemo(() => {
+    setPage(0)  // reset page when sort changes
     if (!sortCol) return rows
     return [...rows].sort((a, b) => {
       const av = a[sortCol]; const bv = b[sortCol]
@@ -189,55 +194,78 @@ function ResultPanel({ rows, chartJson, sql, onExport, onSave }: {
           <span className="badge-neutral px-2 py-0.5 rounded-full text-[10px]">
             {rows.length} rows · {cols.length} cols
           </span>
-          {onSave && (
-            <button onClick={onSave} className="btn-ghost py-1 px-2 text-[10px] gap-1" title="Save this question">
-              <Bookmark className="size-3" /> Save
-            </button>
-          )}
           {onExport && (
             <button onClick={onExport} className="btn-ghost py-1 px-2 text-[10px] gap-1" title="Download CSV">
-              <Upload className="size-3" /> CSV
+              <Download className="size-3" /> CSV
             </button>
           )}
         </div>
       </div>
 
       {/* Table tab */}
-      {tab === "table" && (
-        <div className="overflow-x-auto max-h-80">
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
-              <tr>
-                {cols.map((c) => (
-                  <th
-                    key={c}
-                    onClick={() => toggleSort(c)}
-                    className="px-3 py-2.5 text-left font-semibold text-foreground border-b border-border whitespace-nowrap cursor-pointer select-none hover:bg-muted transition-colors group"
-                  >
-                    <span className="flex items-center gap-0.5">
-                      {c}
-                      <SortIcon col={c} sortCol={sortCol} sortDir={sortDir} />
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((row, ri) => (
-                <tr key={ri} className="row-interactive border-b border-border/30 last:border-0">
-                  {cols.map((c) => (
-                    <td key={c} className="px-3 py-1.5 text-foreground whitespace-nowrap">
-                      {typeof row[c] === "number"
-                        ? <span className="font-mono tabular-nums">{(row[c] as number).toLocaleString()}</span>
-                        : String(row[c] ?? "")}
-                    </td>
+      {tab === "table" && (() => {
+        const pageCount = Math.ceil(sortedRows.length / PAGE_SIZE)
+        const pagedRows = sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+        return (
+          <>
+            <div className="overflow-x-auto max-h-80">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
+                  <tr>
+                    {cols.map((c) => (
+                      <th
+                        key={c}
+                        onClick={() => toggleSort(c)}
+                        className="px-3 py-2.5 text-left font-semibold text-foreground border-b border-border whitespace-nowrap cursor-pointer select-none hover:bg-muted transition-colors group"
+                      >
+                        <span className="flex items-center gap-0.5">
+                          {c}
+                          <SortIcon col={c} sortCol={sortCol} sortDir={sortDir} />
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedRows.map((row, ri) => (
+                    <tr key={ri} className="row-interactive border-b border-border/30 last:border-0">
+                      {cols.map((c) => (
+                        <td key={c} className="px-3 py-1.5 text-foreground whitespace-nowrap">
+                          {typeof row[c] === "number"
+                            ? <span className="font-mono tabular-nums">{(row[c] as number).toLocaleString()}</span>
+                            : String(row[c] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                </tbody>
+              </table>
+            </div>
+            {pageCount > 1 && (
+              <div className="flex items-center justify-between px-4 py-2 border-t border-border text-[11px] text-muted-foreground">
+                <span>Rows {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedRows.length)} of {sortedRows.length}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="px-2 py-0.5 rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                  >
+                    ‹ Prev
+                  </button>
+                  <span className="px-2">{page + 1} / {pageCount}</span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                    disabled={page >= pageCount - 1}
+                    className="px-2 py-0.5 rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                  >
+                    Next ›
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* Chart tab */}
       {tab === "chart" && chartJson && (
@@ -351,22 +379,129 @@ function AgentTrace({ steps, onShowGraph }: { steps: string[]; onShowGraph: () =
   )
 }
 
-function GraphModal({ mermaid, onClose }: { mermaid: string; onClose: () => void }) {
-  const encoded = typeof window !== "undefined"
-    ? btoa(encodeURIComponent(mermaid).replace(/%([0-9A-F]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))) : ""
+const PIPELINE_NODES = [
+  { key: "supervisor",     icon: Cpu,      label: "Supervisor",     desc: "Classifies intent and routes the question",      color: "bg-violet-500/15 border-violet-400/40 text-violet-600 dark:text-violet-400" },
+  { key: "schema_agent",  icon: Search,   label: "Schema Agent",   desc: "Finds relevant tables and columns via semantic search", color: "bg-blue-500/15 border-blue-400/40 text-blue-600 dark:text-blue-400" },
+  { key: "sql_agent",     icon: Code,     label: "SQL Agent",      desc: "Generates, validates, and optionally pauses for approval", color: "bg-amber-500/15 border-amber-400/40 text-amber-600 dark:text-amber-400" },
+  { key: "analysis_agent",icon: BarChart2, label: "Analysis Agent", desc: "Executes the query, builds a chart, summarises results", color: "bg-emerald-500/15 border-emerald-400/40 text-emerald-600 dark:text-emerald-400" },
+]
+
+function GraphModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-card rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-scale-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2"><Workflow className="size-4 text-primary" /><h2 className="font-semibold">Agent Pipeline</h2></div>
           <button onClick={onClose} className="btn-ghost p-1.5 rounded-lg"><X className="size-4" /></button>
         </div>
-        {encoded
-          ? <div className="bg-muted rounded-xl p-4 flex items-center justify-center min-h-50">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`https://mermaid.ink/img/${encoded}?bgColor=transparent`} alt="Agent pipeline" className="max-w-full rounded-lg" />
+        <div className="flex flex-col items-center gap-0">
+          {PIPELINE_NODES.map((node, i) => (
+            <div key={node.key} className="flex flex-col items-center w-full">
+              <div className={`flex items-center gap-3 w-full rounded-xl border px-4 py-3 ${node.color}`}>
+                <node.icon className="size-4 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm">{node.label}</p>
+                  <p className="text-[11px] opacity-75 leading-snug">{node.desc}</p>
+                </div>
+              </div>
+              {i < PIPELINE_NODES.length - 1 && (
+                <div className="flex flex-col items-center py-1">
+                  <div className="w-px h-3 bg-border" />
+                  <div className="text-[9px] text-muted-foreground font-mono px-2 py-0.5 rounded bg-muted border border-border -my-px z-10">
+                    {i === 0 ? "data_query" : i === 2 ? "approved" : "→"}
+                  </div>
+                  <div className="w-px h-3 bg-border" />
+                </div>
+              )}
             </div>
-          : <pre className="text-xs font-mono bg-muted rounded-xl p-4 overflow-auto max-h-75">{mermaid}</pre>}
+          ))}
+        </div>
+        <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
+          Off-topic questions return directly from Supervisor · Schema agent selects only relevant tables · SQL agent skips HITL when approval is disabled for your account
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── SQL approval panel ─────────────────────────────────────────────────────
+
+function ApprovalPanel({
+  draftSql, sqlExplanation, loading, onApprove, onReject, onEdit,
+}: {
+  draftSql: string; sqlExplanation: string; loading: boolean
+  onApprove: () => void; onReject: () => void; onEdit: (sql: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editedSql, setEditedSql] = useState(draftSql)
+
+  return (
+    <div className="ml-9 mt-2 rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3 max-w-2xl">
+      {sqlExplanation && (
+        <p className="text-sm text-muted-foreground">{sqlExplanation}</p>
+      )}
+      <div className="space-y-1.5">
+        <span className="section-label">SQL to execute</span>
+        {editing ? (
+          <textarea
+            value={editedSql}
+            onChange={(e) => setEditedSql(e.target.value)}
+            className="w-full font-mono text-xs bg-muted rounded-lg p-3 border border-border outline-none focus:ring-1 focus:ring-primary/40 resize-y min-h-28"
+            spellCheck={false}
+          />
+        ) : (
+          <pre className="text-xs font-mono bg-muted rounded-lg p-3 overflow-auto max-h-48 leading-relaxed whitespace-pre-wrap">{draftSql}</pre>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {editing ? (
+          <>
+            <button
+              onClick={() => { onEdit(editedSql); setEditing(false) }}
+              disabled={loading || !editedSql.trim()}
+              className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {loading
+                ? <span className="size-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                : <Check className="size-3" />}
+              Submit edit
+            </button>
+            <button
+              onClick={() => { setEditing(false); setEditedSql(draftSql) }}
+              disabled={loading}
+              className="btn-secondary text-xs py-1.5 px-3"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={onApprove}
+              disabled={loading}
+              className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {loading
+                ? <span className="size-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                : <Check className="size-3" />}
+              Approve &amp; run
+            </button>
+            <button
+              onClick={() => { setEditing(true) }}
+              disabled={loading}
+              className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
+            >
+              <Pencil className="size-3" /> Edit SQL
+            </button>
+            <button
+              onClick={onReject}
+              disabled={loading}
+              className="text-xs text-destructive hover:text-destructive/80 transition-colors flex items-center gap-1.5 px-2 py-1.5"
+            >
+              <X className="size-3" /> Reject
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -531,6 +666,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const [approvalLoading, setApprovalLoading] = useState(false)
+  const [streamStep, setStreamStep] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [threadId, setThreadId] = useState(() => uuidv4())
   const [datasets, setDatasets] = useState<Dataset[]>([])
@@ -540,7 +677,6 @@ export default function ChatPage() {
   const [threads, setThreads] = useState<ThreadSummary[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
-  const [graphMermaid, setGraphMermaid] = useState<string | null>(null)
   const [showGraph, setShowGraph] = useState(false)
   const [saveModal, setSaveModal] = useState<{ question: string; sql: string; msgIndex: number; datasets: string[]; results: Record<string, unknown>[] } | null>(null)
   // Maps message render-index → saved query ID for bookmark toggle (separate from messages array to avoid stale-closure bugs)
@@ -552,6 +688,7 @@ export default function ChatPage() {
   const pendingQueryRef = useRef<string | null>(null)
   const [selectionInfo, setSelectionInfo] = useState<{ text: string; x: number; y: number } | null>(null)
   const [threadSearch, setThreadSearch] = useState("")
+  const [streamingEnabled, setStreamingEnabled] = useState(false)
 
   const userInitial = session?.user?.email?.[0]?.toUpperCase() ?? "U"
   const authHeader = { Authorization: `Bearer ${session?.accessToken}` }
@@ -603,6 +740,15 @@ export default function ChatPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.accessToken])
 
+  // Fetch live user settings so admin toggles take effect without re-login
+  useEffect(() => {
+    if (!session?.accessToken) return
+    fetch(`${BACKEND}/api/auth/me`, { headers: { Authorization: `Bearer ${session.accessToken}` } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((u) => { if (u) setStreamingEnabled(u.streaming_enabled ?? false) })
+      .catch(() => {})
+  }, [session?.accessToken])
+
   const fetchThreads = useCallback(async () => {
     if (!session?.accessToken) return
     try {
@@ -625,14 +771,6 @@ export default function ChatPage() {
       setInput(q)  // pre-fill so user can Send manually if auto-submit fails
     }
   }, [])
-  useEffect(() => {
-    if (!session?.accessToken || graphMermaid) return
-    fetch(`${BACKEND}/api/chat/graph`, { headers: authHeader })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => d?.mermaid && setGraphMermaid(d.mermaid))
-      .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.accessToken])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages, loading])
 
   async function loadThread(id: string) {
@@ -698,16 +836,106 @@ export default function ChatPage() {
   async function submitMessage(text: string) {
     if (!text || loading) return
     setMessages((prev) => [...prev, { role: "user", content: text }])
-    setInput(""); setLoading(true); setError(null)
-    try {
-      const res = await callBackend("", { thread_id: threadId, message: text, selected_datasets: selectedDatasets })
-      handleChatResponse(await res.json())
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return
-      setError(`Could not reach the assistant: ${err instanceof Error ? err.message : err}`)
-    } finally {
-      setLoading(false)
-      fetchThreads()   // refresh sidebar after every message (response or error)
+    setInput(""); setLoading(true); setError(null); setStreamStep(null)
+
+    abortRef.current = new AbortController()
+    const useStreaming = streamingEnabled
+
+    if (useStreaming) {
+      // SSE streaming path — shows live step progress
+      try {
+        const res = await fetch(`${BACKEND}/api/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader },
+          body: JSON.stringify({ thread_id: threadId, message: text, selected_datasets: selectedDatasets }),
+          signal: abortRef.current.signal,
+        })
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}))
+          throw new Error(detail?.detail ?? `HTTP ${res.status}`)
+        }
+
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ""
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split("\n")
+          buf = lines.pop() ?? ""
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue
+            let evt: Record<string, unknown>
+            try { evt = JSON.parse(line.slice(6)) } catch { continue }
+            if (evt.type === "step") {
+              setStreamStep(evt.step as string)
+            } else if (evt.type === "needs_approval") {
+              setStreamStep(null)
+              handleChatResponse({
+                content: "Please review the SQL query below before I execute it.",
+                status: "needs_approval",
+                draft_sql: evt.draft_sql as string,
+                sql_explanation: evt.sql_explanation as string,
+                steps_taken: evt.steps_taken as string[],
+              })
+            } else if (evt.type === "done") {
+              setStreamStep(null)
+              handleChatResponse({
+                content: evt.content as string,
+                status: "done",
+                chart_json: evt.chart_json as string,
+                query_results: evt.query_results as Record<string, unknown>[],
+                executed_sql: evt.executed_sql as string,
+                steps_taken: evt.steps_taken as string[],
+                interpretation_note: evt.interpretation_note as string,
+                cleaned_question: evt.cleaned_question as string,
+              })
+            } else if (evt.type === "error") {
+              setError(evt.message as string)
+            }
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return
+        setError(`Could not reach the assistant: ${err instanceof Error ? err.message : err}`)
+      } finally {
+        setLoading(false); setStreamStep(null); abortRef.current = null
+        fetchThreads()
+      }
+    } else {
+      // Regular POST path — waits for full response
+      try {
+        const res = await fetch(`${BACKEND}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader },
+          body: JSON.stringify({ thread_id: threadId, message: text, selected_datasets: selectedDatasets }),
+          signal: abortRef.current.signal,
+        })
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}))
+          throw new Error(detail?.detail ?? `HTTP ${res.status}`)
+        }
+        const data = await res.json()
+        handleChatResponse({
+          content: data.content,
+          status: data.status,
+          draft_sql: data.draft_sql,
+          sql_explanation: data.sql_explanation,
+          chart_json: data.chart_json,
+          query_results: data.query_results,
+          executed_sql: data.executed_sql,
+          steps_taken: data.steps_taken,
+          interpretation_note: data.interpretation_note,
+          cleaned_question: data.cleaned_question,
+        })
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return
+        setError(`Could not reach the assistant: ${err instanceof Error ? err.message : err}`)
+      } finally {
+        setLoading(false); abortRef.current = null
+        fetchThreads()
+      }
     }
   }
 
@@ -724,6 +952,45 @@ export default function ChatPage() {
   async function resumeStopped(query: string) {
     setMessages((prev) => prev.filter((m) => !m.resumeQuery))
     await submitMessage(query)
+  }
+
+  async function handleApproval(action: "approve" | "reject" | "edit", editedSql?: string) {
+    setApprovalLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${BACKEND}/api/chat/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ thread_id: threadId, action, edited_sql: editedSql ?? "" }),
+      })
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}))
+        throw new Error(detail?.detail ?? `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setMessages((prev) => {
+        // Mark the pending approval message as done so the panel disappears
+        const next = prev.map((m) =>
+          m.status === "needs_approval" ? { ...m, status: "done" as const } : m
+        )
+        if (action === "reject") return next
+        return [...next, {
+          role: "assistant" as const,
+          content: data.content,
+          chartJson: data.chart_json || undefined,
+          resultRows: data.query_results?.length ? data.query_results : undefined,
+          executedSql: data.executed_sql || undefined,
+          agentSteps: data.steps_taken ?? [],
+          interpretationNote: data.interpretation_note || undefined,
+          cleanedQuestion: data.cleaned_question || undefined,
+        }]
+      })
+      fetchThreads()
+    } catch (err) {
+      setError(`Approval failed: ${err instanceof Error ? err.message : err}`)
+    } finally {
+      setApprovalLoading(false)
+    }
   }
 
   async function callBackend(path: string, body: object): Promise<Response> {
@@ -743,7 +1010,8 @@ export default function ChatPage() {
   }
 
   function handleChatResponse(data: {
-    content: string
+    content: string; status?: string
+    draft_sql?: string; sql_explanation?: string
     chart_json?: string; query_results?: Record<string, unknown>[]
     executed_sql?: string; steps_taken?: string[]
     interpretation_note?: string; cleaned_question?: string
@@ -752,6 +1020,9 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, {
       role: "assistant",
       content: data.content,
+      status: data.status === "needs_approval" ? "needs_approval" : "done",
+      draftSql: data.draft_sql || undefined,
+      sqlExplanation: data.sql_explanation || undefined,
       chartJson: data.chart_json || undefined,
       resultRows: data.query_results?.length ? data.query_results : undefined,
       executedSql: data.executed_sql || undefined,
@@ -775,9 +1046,12 @@ export default function ChatPage() {
       const r = await fetch(`${BACKEND}/api/datasets/upload`, { method: "POST", headers: authHeader, body: form })
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d?.detail ?? `HTTP ${r.status}`) }
       const meta = await r.json(); await fetchDatasets()
+      const renameNote = meta.was_renamed
+        ? ` (renamed to \`${meta.table_name}\` — a table with that name already existed)`
+        : ""
       setMessages((prev) => [...prev, {
         role: "assistant",
-        content: `Uploaded **${file.name}** → table \`${meta.table_name}\` (${meta.row_count.toLocaleString()} rows). Added to Data Catalog — AI enrichment running in background. You can now ask questions about it.`,
+        content: `Uploaded **${file.name}** → table \`${meta.table_name}\` (${meta.row_count.toLocaleString()} rows)${renameNote}. Added to Data Catalog — AI enrichment running in background. You can now ask questions about it.`,
       }])
     } catch (err) { setError(`Upload failed: ${err instanceof Error ? err.message : err}`)
     } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = "" }
@@ -839,7 +1113,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      {showGraph && graphMermaid && <GraphModal mermaid={graphMermaid} onClose={() => setShowGraph(false)} />}
+      {showGraph && <GraphModal onClose={() => setShowGraph(false)} />}
       {saveModal && <SaveModal question={saveModal.question} sql={saveModal.sql} datasets={saveModal.datasets} onSave={handleSave} onClose={() => setSaveModal(null)} />}
 
       {/* ── Select-and-ask popup ── */}
@@ -873,7 +1147,7 @@ export default function ChatPage() {
             <div className="size-7 rounded-lg gradient-primary flex items-center justify-center shadow-sm">
               <Sparkles className="size-3.5 text-white" />
             </div>
-            <span className="font-bold text-sm tracking-tight">DataChat</span>
+            <span className="font-bold text-sm tracking-tight">Business Assistant</span>
           </div>
           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 hover:bg-sidebar-accent" onClick={newChat} title="New conversation">
             <Plus className="size-4" />
@@ -936,11 +1210,6 @@ export default function ChatPage() {
           </div>
           <div className="flex items-center gap-2">
             <DatasetSelector datasets={datasets} selected={selectedDatasets} onChange={setSelectedDatasets} />
-            {graphMermaid && (
-              <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground hover:text-primary" onClick={() => setShowGraph(true)}>
-                <Workflow className="size-3.5" /> Pipeline
-              </Button>
-            )}
             <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleUpload} />
             <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}
               className="gap-1.5 text-xs hover:border-primary/40 hover:text-primary transition-all">
@@ -1022,13 +1291,22 @@ export default function ChatPage() {
                     <span dangerouslySetInnerHTML={{ __html: msg.interpretationNote.replace(/\*(.*?)\*/g, "<strong>$1</strong>") }} />
                   </div>
                 )}
+                {msg.role === "assistant" && msg.status === "needs_approval" && msg.draftSql && (
+                  <ApprovalPanel
+                    draftSql={msg.draftSql}
+                    sqlExplanation={msg.sqlExplanation ?? ""}
+                    loading={approvalLoading}
+                    onApprove={() => handleApproval("approve")}
+                    onReject={() => handleApproval("reject")}
+                    onEdit={(sql) => handleApproval("edit", sql)}
+                  />
+                )}
                 {msg.role === "assistant" && msg.resultRows && msg.resultRows.length > 0 && (
                   <ResultPanel
                     rows={msg.resultRows}
                     chartJson={msg.chartJson}
                     sql={msg.executedSql}
                     onExport={msg.executedSql ? () => handleExport(msg.executedSql!) : undefined}
-                    onSave={() => setSaveModal({ question: msg.cleanedQuestion || siblingQuestion, sql: msg.executedSql ?? "", msgIndex: i, datasets: selectedDatasets, results: msg.resultRows ?? [] })}
                   />
                 )}
                 {msg.role === "assistant" && msg.agentSteps && msg.agentSteps.length > 0 && (
@@ -1077,6 +1355,15 @@ export default function ChatPage() {
           {loading && (
             <div className="flex items-center gap-3 animate-fade-in">
               <TypingDots />
+              {streamStep && AGENT_META[streamStep] && (() => {
+                const Icon = AGENT_META[streamStep].icon
+                return (
+                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 animate-fade-in">
+                    <Icon className="size-3 text-primary/50" />
+                    {AGENT_META[streamStep].label}…
+                  </span>
+                )
+              })()}
               <button onClick={stopQuery}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive border border-border hover:border-destructive/40 hover:bg-destructive/5 rounded-lg px-2.5 py-1.5 transition-all shrink-0">
                 <span className="size-2 rounded-sm bg-current" /> Stop
@@ -1094,8 +1381,11 @@ export default function ChatPage() {
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e) } }}
-              placeholder="Ask about your data… (Shift+Enter for new line)"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSubmit(e); return }
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e) }
+              }}
+              placeholder="Ask about your data… (Enter to send, Shift+Enter for new line)"
               disabled={loading}
               rows={1}
               className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50 max-h-45 leading-relaxed"
@@ -1105,7 +1395,8 @@ export default function ChatPage() {
               Send
             </Button>
           </form>
-          <p className="text-center text-[10px] text-muted-foreground/40 mt-1.5">Shift+Enter for new line</p>
+          <p className="text-center text-[10px] text-muted-foreground/40 mt-1.5">Enter to send · Shift+Enter for new line · Cmd+Enter also sends</p>
+          <p className="text-center text-[10px] text-muted-foreground/40 mt-0.5">Business Assistant can make mistakes. Always verify important results against your source data.</p>
         </div>
       </div>
     </div>

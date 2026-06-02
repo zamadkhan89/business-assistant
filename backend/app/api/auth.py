@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_db
+from app.core.rate_limit import is_rate_limited
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -59,6 +60,8 @@ class UserResponse(BaseModel):
     name: str | None
     is_admin: bool = False
     is_verified: bool = False
+    streaming_enabled: bool = False
+    sql_approval_required: bool = False
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -111,10 +114,10 @@ def _send_verification_email(to_email: str, code: str) -> None:
         return
     _send_email(
         to_email,
-        "Verify your DataChat account",
-        f"Hello,\n\nYour DataChat verification code is:\n\n    {code}\n\n"
+        "Verify your Business Assistant account",
+        f"Hello,\n\nYour Business Assistant verification code is:\n\n    {code}\n\n"
         "This code expires in 15 minutes.\n"
-        "If you didn't create a DataChat account, you can safely ignore this email.",
+        "If you didn't create a Business Assistant account, you can safely ignore this email.",
     )
 
 
@@ -125,8 +128,8 @@ def _send_reset_email(to_email: str, reset_url: str) -> None:
         return
     _send_email(
         to_email,
-        "Reset your DataChat password",
-        f"Hello,\n\nClick the link below to reset your DataChat password:\n\n{reset_url}\n\n"
+        "Reset your Business Assistant password",
+        f"Hello,\n\nClick the link below to reset your Business Assistant password:\n\n{reset_url}\n\n"
         "This link expires in 1 hour. If you didn't request a reset, ignore this email.",
     )
 
@@ -145,7 +148,7 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     if user.is_blocked:
-        raise HTTPException(status_code=403, detail="Account suspended. Contact support.")
+        raise HTTPException(status_code=401, detail="Account suspended. Contact support.")
     return user
 
 
@@ -203,6 +206,8 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    if is_rate_limited(f"login:{body.email.lower()}", limit=10, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Too many login attempts. Please wait a minute.")
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
@@ -280,6 +285,8 @@ async def me(current_user: User = Depends(get_current_user)):
         name=current_user.name,
         is_admin=_user_is_admin(current_user),
         is_verified=current_user.is_verified,
+        streaming_enabled=current_user.streaming_enabled,
+        sql_approval_required=current_user.sql_approval_required,
     )
 
 

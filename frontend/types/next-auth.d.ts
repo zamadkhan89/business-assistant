@@ -5,12 +5,16 @@ declare module "next-auth" {
     accessToken: string
     isAdmin: boolean
     isVerified: boolean
+    streamingEnabled: boolean
+    sqlApprovalRequired: boolean
     user: { id: string } & DefaultSession["user"]
   }
   interface User {
     accessToken: string
     isAdmin: boolean
     isVerified: boolean
+    streamingEnabled: boolean
+    sqlApprovalRequired: boolean
   }
 }
 
@@ -19,5 +23,7 @@ declare module "next-auth/jwt" {
     accessToken: string
     isAdmin: boolean
     isVerified: boolean
+    streamingEnabled: boolean
+    sqlApprovalRequired: boolean
   }
 }

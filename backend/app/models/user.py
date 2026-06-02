@@ -27,7 +27,9 @@ class User(Base):
     is_blocked: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, server_default="false"
     )
-    storage_quota_mb: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
+    storage_quota_mb: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=200)
+    streaming_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    sql_approval_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()

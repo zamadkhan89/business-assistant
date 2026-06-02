@@ -6,12 +6,22 @@ import {
   Users, ShieldCheck, Database, MessageSquare,
   CheckCircle2, XCircle, Crown, Loader2,
   Table2, Clock, Search, Trash2, ShieldOff, Shield,
-  ShieldX, AlertTriangle, HardDrive, X,
+  ShieldX, AlertTriangle, HardDrive, X, ScrollText,
+  Zap, GitBranch,
 } from "lucide-react"
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000"
 
 type Filter = "all" | "verified" | "unverified" | "datasets" | "threads" | "blocked"
+
+interface AuditEntry {
+  id: string
+  admin_email: string
+  action: string
+  target_email: string | null
+  detail: string | null
+  created_at: string | null
+}
 
 interface AdminUser {
   id: string
@@ -25,6 +35,8 @@ interface AdminUser {
   dataset_count: number
   storage_used_mb: number
   storage_quota_mb: number | null
+  streaming_enabled: boolean
+  sql_approval_required: boolean
 }
 
 interface Dataset { table_name: string; row_count: number; source_type: string }
@@ -144,9 +156,12 @@ export default function AdminPage() {
   const [detailTab, setDetailTab]   = useState<"datasets" | "threads" | "storage">("datasets")
   const [detailLoad, setDetailLoad] = useState(false)
   const [actionLoad, setActionLoad] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [confirm, setConfirm]       = useState<{ message: string; action: () => void } | null>(null)
   const [quotaInput, setQuotaInput] = useState("")
   const [savingQuota, setSavingQuota] = useState(false)
+  const [auditLog, setAuditLog]     = useState<AuditEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
 
   const authHeader = { Authorization: `Bearer ${session?.accessToken}` }
 
@@ -163,6 +178,20 @@ export default function AdminPage() {
   }, [session?.accessToken])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
+
+  const fetchAuditLog = useCallback(async () => {
+    if (!session?.accessToken) return
+    setAuditLoading(true)
+    try {
+      const r = await fetch(`${BACKEND}/api/admin/audit-log`, { headers: authHeader })
+      if (r.ok) setAuditLog(await r.json())
+    } finally {
+      setAuditLoading(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.accessToken])
+
+  useEffect(() => { fetchAuditLog() }, [fetchAuditLog])
 
   async function selectUser(user: AdminUser) {
     setSelected(user)
@@ -183,6 +212,7 @@ export default function AdminPage() {
 
   async function doAction(key: string, url: string, method: string, body?: unknown, onSuccess?: () => void) {
     setActionLoad(key)
+    setActionError(null)
     try {
       const r = await fetch(url, {
         method,
@@ -190,24 +220,37 @@ export default function AdminPage() {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       })
       if (r.ok) {
-        await fetchUsers()
-        const updated = await fetch(`${BACKEND}/api/admin/users`, { headers: authHeader })
-        if (updated.ok) {
-          const list: AdminUser[] = await updated.json()
+        const listRes = await fetch(`${BACKEND}/api/admin/users`, { headers: authHeader })
+        if (listRes.ok) {
+          const list: AdminUser[] = await listRes.json()
+          setUsers(list)
+          fetchAuditLog()
           const fresh = list.find((u) => u.id === selected?.id)
           if (fresh) { setSelected(fresh); setQuotaInput(fresh.storage_quota_mb != null ? String(fresh.storage_quota_mb) : "") }
           else setSelected(null)
         }
         onSuccess?.()
+      } else {
+        const err = await r.json().catch(() => ({}))
+        setActionError(err.detail ?? "Action failed — please try again.")
       }
+    } catch {
+      setActionError("Could not reach the server. Is the backend running?")
     } finally {
       setActionLoad(null)
-      setConfirm(null)
     }
   }
 
-  function askConfirm(message: string, action: () => void) {
-    setConfirm({ message, action })
+  function askConfirm(message: string, loadKey: string, action: () => void) {
+    setConfirm({
+      message,
+      action: () => {
+        setActionLoad(loadKey)
+        setActionError(null)
+        setConfirm(null)
+        action()
+      },
+    })
   }
 
   async function deleteDataset(tableName: string) {
@@ -430,10 +473,14 @@ export default function AdminPage() {
                 {/* Actions */}
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Actions</p>
+                  {actionError && (
+                    <p className="text-[11px] text-destructive bg-destructive/10 rounded-lg px-3 py-2">{actionError}</p>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <button
                       onClick={() => askConfirm(
                         selected.is_blocked ? `Unblock ${selected.email}?` : `Block ${selected.email}? They will be immediately signed out.`,
+                        "block",
                         () => doAction("block", `${BACKEND}/api/admin/users/${selected.id}/${selected.is_blocked ? "unblock" : "block"}`, "POST")
                       )}
                       disabled={actionLoad !== null}
@@ -451,6 +498,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => askConfirm(
                         `${selected.is_admin ? "Remove admin from" : "Make admin"} ${selected.email}?`,
+                        "admin",
                         () => doAction("admin", `${BACKEND}/api/admin/users/${selected.id}/toggle-admin`, "POST")
                       )}
                       disabled={actionLoad !== null}
@@ -467,6 +515,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => askConfirm(
                         `Permanently delete ${selected.email} and ALL their data? This cannot be undone.`,
+                        "delete",
                         () => doAction("delete", `${BACKEND}/api/admin/users/${selected.id}`, "DELETE", undefined, () => setSelected(null))
                       )}
                       disabled={actionLoad !== null}
@@ -475,6 +524,67 @@ export default function AdminPage() {
                       {actionLoad === "delete" ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
                       Delete user &amp; all data
                     </button>
+                  </div>
+                </div>
+
+                {/* Feature toggles */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Feature Settings</p>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Zap className="size-3.5 text-amber-500 shrink-0" />
+                        <div>
+                          <p className="text-xs font-medium">Streaming</p>
+                          <p className="text-[10px] text-muted-foreground">Live step progress via SSE</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => doAction(
+                          `streaming-${selected.id}`,
+                          `${BACKEND}/api/admin/users/${selected.id}/settings`,
+                          "PATCH",
+                          { streaming_enabled: !selected.streaming_enabled }
+                        )}
+                        disabled={actionLoad !== null}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                          selected.streaming_enabled ? "bg-amber-500" : "bg-muted-foreground/30"
+                        }`}
+                      >
+                        {actionLoad === `streaming-${selected.id}`
+                          ? <Loader2 className="size-3 animate-spin mx-auto text-white" />
+                          : <span className={`inline-block size-3.5 rounded-full bg-white shadow transition-transform ${
+                              selected.streaming_enabled ? "translate-x-4" : "translate-x-0.5"
+                            }`} />}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="size-3.5 text-blue-500 shrink-0" />
+                        <div>
+                          <p className="text-xs font-medium">SQL Approval</p>
+                          <p className="text-[10px] text-muted-foreground">Require review before executing SQL</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => doAction(
+                          `approval-${selected.id}`,
+                          `${BACKEND}/api/admin/users/${selected.id}/settings`,
+                          "PATCH",
+                          { sql_approval_required: !selected.sql_approval_required }
+                        )}
+                        disabled={actionLoad !== null}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                          selected.sql_approval_required ? "bg-blue-500" : "bg-muted-foreground/30"
+                        }`}
+                      >
+                        {actionLoad === `approval-${selected.id}`
+                          ? <Loader2 className="size-3 animate-spin mx-auto text-white" />
+                          : <span className={`inline-block size-3.5 rounded-full bg-white shadow transition-transform ${
+                              selected.sql_approval_required ? "translate-x-4" : "translate-x-0.5"
+                            }`} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -511,7 +621,7 @@ export default function AdminPage() {
                           <p className="text-[10px] text-muted-foreground">{ds.row_count.toLocaleString()} rows · {ds.source_type}</p>
                         </div>
                         <button
-                          onClick={() => askConfirm(`Delete '${ds.table_name}'? This cannot be undone.`, () => deleteDataset(ds.table_name))}
+                          onClick={() => askConfirm(`Delete '${ds.table_name}'? This cannot be undone.`, `ds-${ds.table_name}`, () => deleteDataset(ds.table_name))}
                           disabled={actionLoad === `ds-${ds.table_name}`}
                           className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
                         >
@@ -580,6 +690,62 @@ export default function AdminPage() {
             )}
           </div>
         </div>
+
+        {/* Audit log */}
+        <div className="card-elevated p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ScrollText className="size-4 text-muted-foreground" />
+              <p className="font-semibold text-sm">Admin Audit Log</p>
+            </div>
+            <button onClick={fetchAuditLog} disabled={auditLoading} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              {auditLoading ? <Loader2 className="size-3 animate-spin" /> : "Refresh"}
+            </button>
+          </div>
+          {auditLoading && auditLog.length === 0 ? (
+            <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground text-xs">
+              <Loader2 className="size-3.5 animate-spin" /> Loading…
+            </div>
+          ) : auditLog.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">No admin actions recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-muted-foreground border-b border-border">
+                    <th className="pb-2 pr-4 font-medium">When</th>
+                    <th className="pb-2 pr-4 font-medium">Admin</th>
+                    <th className="pb-2 pr-4 font-medium">Action</th>
+                    <th className="pb-2 pr-4 font-medium">Target</th>
+                    <th className="pb-2 font-medium">Detail</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {auditLog.map((e) => (
+                    <tr key={e.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">{timeAgo(e.created_at)}</td>
+                      <td className="py-2 pr-4 font-mono truncate max-w-[140px]">{e.admin_email}</td>
+                      <td className="py-2 pr-4">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          e.action === "delete_user"   ? "bg-destructive/10 text-destructive" :
+                          e.action === "block"         ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                          e.action === "grant_admin"   ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" :
+                          e.action === "revoke_admin"  ? "bg-muted text-muted-foreground" :
+                          "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                        }`}>
+                          {e.action.replace(/_/g, " ")}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-muted-foreground truncate max-w-[160px]">{e.target_email ?? "—"}</td>
+                      <td className="py-2 text-muted-foreground truncate max-w-[160px]">{e.detail ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   )

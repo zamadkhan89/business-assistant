@@ -20,13 +20,14 @@ def init_chroma() -> None:
     global _chroma_client, _chroma_collection
     try:
         import chromadb
+        from app.core.config import settings
 
-        _chroma_client = chromadb.EphemeralClient()
+        _chroma_client = chromadb.PersistentClient(path=settings.CHROMA_PATH)
         _chroma_collection = _chroma_client.get_or_create_collection(
             "schema_embeddings",
             metadata={"hnsw:space": "cosine"},
         )
-        logger.info("[schema] ChromaDB initialised")
+        logger.info("[schema] ChromaDB initialised (persistent at %s)", settings.CHROMA_PATH)
     except Exception as exc:
         logger.warning("[schema] ChromaDB unavailable (%s); will send full schema to LLM", exc)
 
@@ -197,7 +198,7 @@ def schema_agent_node(state: AgentState) -> dict:
             "messages": [reply],
             "schema_context": {},
             "current_step": "done",
-            "steps_taken": ["schema_agent"],
+            "steps_taken": state.get("steps_taken", []) + ["schema_agent"],
             "error": "",
         }
 
@@ -222,7 +223,7 @@ def schema_agent_node(state: AgentState) -> dict:
             "messages": [reply],
             "schema_context": {},
             "current_step": "done",
-            "steps_taken": ["schema_agent"],
+            "steps_taken": state.get("steps_taken", []) + ["schema_agent"],
             "error": "no_schema",
         }
 
@@ -300,5 +301,5 @@ def schema_agent_node(state: AgentState) -> dict:
         "schema_context": schema_context,
         "current_step": "schema_done",
         "query_engine": query_engine,
-        "steps_taken": ["schema_agent"],
+        "steps_taken": state.get("steps_taken", []) + ["schema_agent"],
     }

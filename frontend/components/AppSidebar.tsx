@@ -63,7 +63,7 @@ export function AppSidebar() {
           <Sparkles className="size-3.5 text-primary-foreground" />
         </div>
         {!collapsed && (
-          <span className="font-semibold text-sm truncate">DataChat</span>
+          <span className="font-semibold text-sm truncate">Business Assistant</span>
         )}
       </div>
 

@@ -21,10 +21,12 @@ Two-database usage
   can continue mid-execution without re-running schema linking or SQL generation.
 """
 import asyncio
+import json
 import logging
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from pydantic import BaseModel
@@ -34,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.core.config import settings
 from app.core.db import get_db
+from app.core.rate_limit import is_rate_limited
 from app.models.glossary import GlossaryEntry
 from app.models.message import Message
 from app.models.thread import Thread
@@ -138,6 +141,12 @@ async def chat(
     Both the user message and the final assistant reply are persisted to PostgreSQL
     so the chat history sidebar can reconstruct the conversation after a restart.
     """
+    if is_rate_limited(f"chat:{current_user.id}", limit=settings.CHAT_RATE_LIMIT_PER_MINUTE):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit: max {settings.CHAT_RATE_LIMIT_PER_MINUTE} messages per minute.",
+        )
+
     graph = _get_graph(request)
 
     # ── Thread / initial message persistence ────────────────────────────────
@@ -249,6 +258,7 @@ async def chat(
                     "selected_datasets": body.selected_datasets,
                     "athena_creds": athena_creds,
                     "preloaded_metadata": preloaded_metadata,
+                    "sql_approval_required": current_user.sql_approval_required,
                 },
                 config=config,
             ),
@@ -388,4 +398,184 @@ async def resume(
         steps_taken=meta["steps_taken"],
         interpretation_note=meta["interpretation_note"],
         cleaned_question=meta["cleaned_question"],
+    )
+
+
+# ── Streaming endpoint ────────────────────────────────────────────────────────
+
+@router.post("/stream")
+async def chat_stream(
+    body: ChatRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    SSE variant of POST /chat.  Yields server-sent events as each agent node
+    completes so the frontend can show live progress instead of a blank wait.
+
+    Event types
+    -----------
+    {"type": "step",           "step": "<node_name>"}
+    {"type": "needs_approval", "draft_sql": "...", "sql_explanation": "...", "steps_taken": [...]}
+    {"type": "done",           "content": "...", "chart_json": "...", ...}
+    {"type": "error",          "message": "..."}
+    """
+    if is_rate_limited(f"chat:{current_user.id}", limit=settings.CHAT_RATE_LIMIT_PER_MINUTE):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit: max {settings.CHAT_RATE_LIMIT_PER_MINUTE} messages per minute.",
+        )
+
+    graph = _get_graph(request)
+
+    # ── Thread / message persistence ─────────────────────────────────────────
+    try:
+        thread = await db.get(Thread, body.thread_id)
+        if thread is None:
+            thread = Thread(id=body.thread_id, user_id=current_user.id, title=body.message[:60])
+            db.add(thread)
+            await db.flush()
+        elif thread.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Thread belongs to another user")
+        db.add(Message(thread_id=thread.id, role="user", content=body.message))
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("[stream] DB error during thread setup: %s", exc)
+        raise HTTPException(status_code=500, detail="Database error setting up thread")
+
+    # ── Preload context ───────────────────────────────────────────────────────
+    glossary_context: list[dict] = []
+    try:
+        grows = await db.execute(select(GlossaryEntry).where(GlossaryEntry.user_id == current_user.id))
+        glossary_context = [{"term": g.term, "definition": g.definition} for g in grows.scalars()]
+    except Exception as exc:
+        logger.warning("[stream] Could not load glossary: %s", exc)
+
+    athena_creds: dict = {}
+    try:
+        import json as _json
+        from app.models.athena_config import AthenaConfig
+        _GLOBAL_ID = "__global__"
+        for owner_id, source_key in [(current_user.id, "personal"), (_GLOBAL_ID, "global")]:
+            row = await db.execute(select(AthenaConfig).where(AthenaConfig.user_id == owner_id))
+            cfg = row.scalar_one_or_none()
+            if cfg and cfg.aws_access_key_id and cfg.aws_secret_access_key:
+                athena_creds[source_key] = {
+                    "aws_region": cfg.aws_region, "aws_access_key_id": cfg.aws_access_key_id,
+                    "aws_secret_access_key": cfg.aws_secret_access_key,
+                    "athena_workgroup": cfg.athena_workgroup,
+                    "athena_output_bucket": cfg.athena_output_bucket, "source": source_key,
+                }
+    except Exception as exc:
+        logger.warning("[stream] Could not pre-load Athena creds: %s", exc)
+
+    preloaded_metadata: dict = {}
+    try:
+        from app.models.table_metadata import TableMetadata
+        meta_rows = await db.execute(select(TableMetadata).where(TableMetadata.user_id == current_user.id))
+        for tm in meta_rows.scalars():
+            tcols: dict = {}
+            for cm in (tm.columns or []):
+                sample_vals: list = []
+                if cm.sample_values:
+                    try:
+                        sample_vals = _json.loads(cm.sample_values)
+                    except Exception:
+                        pass
+                tcols[cm.column_name] = {
+                    "description": cm.description or "", "display_name": cm.display_name or "",
+                    "is_kpi": cm.is_kpi, "kpi_definition": cm.kpi_definition or "",
+                    "sample_values": sample_vals,
+                }
+            join_hints: list = []
+            if tm.join_hints:
+                try:
+                    join_hints = _json.loads(tm.join_hints)
+                except Exception:
+                    pass
+            preloaded_metadata[tm.table_key] = {
+                "description": tm.description or "", "business_context": tm.business_context or "",
+                "display_name": tm.display_name or "", "join_hints": join_hints, "columns": tcols,
+            }
+    except Exception as exc:
+        logger.warning("[stream] Could not pre-load table metadata: %s", exc)
+
+    config = {"configurable": {"thread_id": body.thread_id}}
+    input_state = {
+        "messages": [HumanMessage(content=body.message)],
+        "glossary_context": glossary_context,
+        "user_id": current_user.id,
+        "selected_datasets": body.selected_datasets,
+        "athena_creds": athena_creds,
+        "preloaded_metadata": preloaded_metadata,
+        "sql_approval_required": current_user.sql_approval_required,
+    }
+
+    async def generate():
+        accumulated: dict = {
+            "chart_json": "", "query_results": [], "draft_sql": "",
+            "steps_taken": [], "interpretation_note": "", "cleaned_question": "", "sql_explanation": "",
+        }
+        last_content = ""
+
+        try:
+            async with asyncio.timeout(settings.QUERY_TIMEOUT_SECONDS + 60):
+                async for chunk in graph.astream(input_state, config=config, stream_mode="updates"):
+                    for node_name, updates in chunk.items():
+                        if node_name == "__interrupt__":
+                            try:
+                                interrupt_val = updates[0].value
+                            except (IndexError, AttributeError, TypeError):
+                                interrupt_val = {}
+                            yield f"data: {json.dumps({'type': 'needs_approval', 'draft_sql': interrupt_val.get('draft_sql', ''), 'sql_explanation': interrupt_val.get('sql_explanation', ''), 'steps_taken': accumulated['steps_taken']})}\n\n"
+                            return
+
+                        if node_name in ("supervisor", "schema_agent", "sql_agent", "analysis_agent"):
+                            yield f"data: {json.dumps({'type': 'step', 'step': node_name})}\n\n"
+
+                        if isinstance(updates, dict):
+                            for key in accumulated:
+                                val = updates.get(key)
+                                if val is not None:
+                                    accumulated[key] = val
+                            msgs = updates.get("messages")
+                            if msgs:
+                                lm = msgs[-1]
+                                if hasattr(lm, "content"):
+                                    last_content = lm.content
+
+        except (TimeoutError, asyncio.TimeoutError):
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Request timed out.'})}\n\n"
+            return
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.error("[stream] Pipeline error: %s", exc)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
+
+        smeta = _sanitize_meta({
+            "chart_json": accumulated["chart_json"],
+            "query_results": accumulated["query_results"],
+            "executed_sql": accumulated["draft_sql"],
+            "steps_taken": accumulated["steps_taken"],
+            "interpretation_note": accumulated["interpretation_note"],
+            "cleaned_question": accumulated["cleaned_question"],
+        })
+        try:
+            db.add(Message(thread_id=body.thread_id, role="assistant", content=last_content, meta=smeta))
+            await db.commit()
+        except Exception as exc:
+            logger.error("[stream] DB commit failed: %s", exc)
+            await db.rollback()
+
+        yield f"data: {json.dumps({'type': 'done', 'content': last_content, **smeta})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -10,19 +10,15 @@ Reducer rules
 -------------
 - messages     : add_messages — new messages are appended, never replaced.
                  This is why conversation history is preserved across turns.
-- steps_taken  : _extend — each node appends its name; the list is never reset
-                 within a single graph run (useful for debugging and audit).
+- steps_taken  : last-write-wins. Supervisor always resets it to ["supervisor"]
+                 at the start of each turn; downstream agents read state["steps_taken"]
+                 and append their own name before returning it.
 - All other fields are last-write-wins (standard TypedDict behaviour).
 """
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
-from langgraph.graph.message import add_messages
-
-
-def _extend(current: list | None, update: list | None) -> list:
-    """Reducer that concatenates lists rather than replacing them."""
-    return (current or []) + (update or [])
+from langgraph.graph.message import add_messages  # noqa: F401 (used by Annotated field below)
 
 
 class AgentState(TypedDict):
@@ -68,7 +64,7 @@ class AgentState(TypedDict):
     chart_json: str
     glossary_context: list[dict]   # [{term, definition}, …] loaded per-request
     user_id: str                   # scopes DuckDB access to this user's tables
-    steps_taken: Annotated[list[str], _extend]  # agent nodes visited this turn
+    steps_taken: list[str]  # agent nodes visited this turn (reset by supervisor each new turn)
     cleaned_question: str          # typo-corrected / clarified version of the user question
     interpretation_note: str       # shown in UI when supervisor corrects the query
     error: str
@@ -76,3 +72,4 @@ class AgentState(TypedDict):
     query_engine: str              # "duckdb" (default) or "athena" (when Athena direct refs are in use)
     athena_creds: dict             # {"personal": {...}, "global": {...}} pre-loaded from DB
     preloaded_metadata: dict       # {table_key: metadata_dict} pre-loaded from DB
+    sql_approval_required: bool    # when False, sql_agent skips HITL interrupt and executes immediately

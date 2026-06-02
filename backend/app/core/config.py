@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
     QUERY_TIMEOUT_SECONDS: int = 60
+    CHAT_RATE_LIMIT_PER_MINUTE: int = 20
     LLM_PROVIDER: str = "anthropic"
     LLM_MODEL: str = "claude-opus-4-5"
     ANTHROPIC_API_KEY: str = ""
@@ -36,6 +37,9 @@ class Settings(BaseSettings):
 
     # DuckDB — absolute path overrides the default (backend/business_assistant.db)
     DUCKDB_PATH: str = ""
+
+    # ChromaDB — persistent storage directory (relative to cwd or absolute)
+    CHROMA_PATH: str = "chroma_data"
 
     # Comma-separated admin emails — these users can manage the shared Athena connection.
     # If empty, ALL authenticated users can manage it (backwards-compatible default).

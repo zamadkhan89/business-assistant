@@ -10,7 +10,7 @@ from app.agents.schema_agent import refresh_chroma
 from app.agents.sql_agent import validate_sql
 from app.api.auth import get_current_user
 from app.core.db import AsyncSessionLocal, get_db
-from app.data.duckdb_connector import drop_uploaded_table, execute_query, ingest_csv, list_uploaded_tables
+from app.data.duckdb_connector import drop_uploaded_table, execute_query, get_conn, ingest_csv, list_uploaded_tables
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,21 @@ async def _background_enrich(table_key: str, user_id: str) -> None:
         logger.warning("[datasets] Background enrichment failed for %s: %s", table_key, exc)
 
 
+def _get_used_mb(user_id: str) -> float:
+    """Return current DuckDB storage used by user_id in MB."""
+    try:
+        with get_conn() as conn:
+            row = conn.execute("""
+                SELECT COALESCE(SUM(t.estimated_size), 0)
+                FROM _dataset_ownership o
+                LEFT JOIN duckdb_tables() t ON t.table_name = o.table_name
+                WHERE o.user_id = ?
+            """, [user_id]).fetchone()
+            return (row[0] or 0) / (1024 * 1024)
+    except Exception:
+        return 0.0
+
+
 @router.post("/upload")
 async def upload_csv(
     background_tasks: BackgroundTasks,
@@ -47,12 +62,25 @@ async def upload_csv(
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="File is empty")
 
+    if current_user.storage_quota_mb is not None:
+        used_mb = _get_used_mb(current_user.id)
+        upload_mb = len(contents) / (1024 * 1024)
+        if used_mb + upload_mb > current_user.storage_quota_mb:
+            remaining = max(0.0, current_user.storage_quota_mb - used_mb)
+            raise HTTPException(
+                status_code=413,
+                detail=f"Storage quota exceeded. You have {remaining:.1f} MB remaining of your {current_user.storage_quota_mb} MB limit.",
+            )
+
     try:
         meta = ingest_csv(contents, file.filename, current_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {exc}")
+
+    # Tell the frontend if the table was auto-renamed to avoid a collision (e.g. _v2)
+    meta["was_renamed"] = bool(re.search(r"_v\d+$", meta["table_name"]))
 
     refresh_chroma(current_user.id)
 

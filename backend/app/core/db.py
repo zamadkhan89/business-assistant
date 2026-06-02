@@ -38,10 +38,13 @@ _MIGRATIONS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_quota_mb BIGINT",
+    # Backfill 200 MB default for all users that have no quota set yet
+    "UPDATE users SET storage_quota_mb = 200 WHERE storage_quota_mb IS NULL",
 ]
 
 
 async def create_all_tables() -> None:
+    import app.models.audit_log  # noqa: F401
     import app.models.athena_config  # noqa: F401
     import app.models.email_verification  # noqa: F401
     import app.models.glossary  # noqa: F401

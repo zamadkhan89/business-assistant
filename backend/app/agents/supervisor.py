@@ -141,6 +141,7 @@ def supervisor_node(state: AgentState) -> dict:
         selected_datasets_section=selected_datasets_section,
     )
 
+    raw = ""
     try:
         raw = get_llm(temperature=0.0).invoke(prompt).content.strip()
         if raw.startswith("```"):
@@ -148,10 +149,15 @@ def supervisor_node(state: AgentState) -> dict:
             raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
         data = json.loads(raw)
     except Exception as exc:
-        logger.warning("[supervisor] Classification failed (%s); defaulting to data_query", exc)
+        logger.warning("[supervisor] Classification failed (%s); raw=%r; defaulting to data_query", exc, raw)
         data = {"intent": "data_query", "cleaned_question": last_message, "reply": ""}
 
+    _VALID_INTENTS = {"data_query", "data_listing", "show_context", "off_topic"}
     intent = data.get("intent", "data_query")
+    if intent not in _VALID_INTENTS:
+        logger.warning("[supervisor] Unknown intent %r; defaulting to data_query", intent)
+        intent = "data_query"
+
     cleaned = (data.get("cleaned_question") or "").strip()
     reply_text = (data.get("reply") or "").strip()
 
@@ -186,6 +192,7 @@ def supervisor_node(state: AgentState) -> dict:
             "interpretation_note": "",
             "steps_taken": ["supervisor"],
             "chart_json": "",
+            "query_results": [],
             "error": "",
         }
 
@@ -198,5 +205,8 @@ def supervisor_node(state: AgentState) -> dict:
         "interpretation_note": "",
         "steps_taken": ["supervisor"],
         "chart_json": "",
+        "query_results": [],
+        "draft_sql": "",
+        "sql_explanation": "",
         "error": "",
     }

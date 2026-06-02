@@ -127,7 +127,7 @@ export default function HomePage() {
             <div className="size-8 rounded-xl bg-linear-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/30">
               <Sparkles className="size-4 text-white" />
             </div>
-            <span className="font-bold tracking-tight text-sm">DataChat</span>
+            <span className="font-bold tracking-tight text-sm">Business Assistant</span>
           </div>
           <div className="flex items-center gap-1">
             <Link href="/profile" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5 text-xs")}>
@@ -249,7 +249,7 @@ export default function HomePage() {
               },
               {
                 step: "03", icon: ShieldCheck, title: "Review & approve SQL",
-                desc: "DataChat shows you the generated SQL before running it. Edit or approve with one click.",
+                desc: "Business Assistant shows you the generated SQL before running it. Edit or approve with one click.",
                 color: "text-emerald-500", bg: "bg-emerald-500/10",
               },
               {
@@ -276,7 +276,7 @@ export default function HomePage() {
           {/* Feature callouts */}
           <div className="mt-4 grid sm:grid-cols-3 gap-3">
             {[
-              { icon: CheckCircle2, label: "Business Glossary", desc: "Define terms like \"ARR\" or \"Churn rate\" once — DataChat applies them to every query automatically.", href: "/glossary", color: "text-emerald-500" },
+              { icon: CheckCircle2, label: "Business Glossary", desc: "Define terms like \"ARR\" or \"Churn rate\" once — Business Assistant applies them to every query automatically.", href: "/glossary", color: "text-emerald-500" },
               { icon: FileText,     label: "Saved Queries",     desc: "Save useful queries and re-run them with one click. Share them with your team.", href: "/saved-queries", color: "text-blue-500" },
               { icon: BarChart2,    label: "Data Catalog",      desc: "Add column descriptions, KPI definitions, and join hints to make AI answers more accurate.", href: "/catalog", color: "text-violet-500" },
             ].map(({ icon: Icon, label, desc, href, color }) => (
@@ -404,7 +404,7 @@ export default function HomePage() {
               <div>
                 <h3 className="text-xl font-bold tracking-tight">Ready to analyse your data?</h3>
                 <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
-                  Upload a CSV or connect AWS Athena. Ask questions in plain English — DataChat generates SQL, builds charts, and explains the results.
+                  Upload a CSV or connect AWS Athena. Ask questions in plain English — Business Assistant generates SQL, builds charts, and explains the results.
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-3 pt-2">

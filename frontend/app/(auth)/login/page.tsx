@@ -158,7 +158,7 @@ export default function LoginPage() {
           <Sparkles className="size-5 text-primary-foreground" />
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
-        <p className="text-sm text-muted-foreground">Sign in to your DataChat account</p>
+        <p className="text-sm text-muted-foreground">Sign in to your Business Assistant account</p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card shadow-sm p-7 space-y-5">
@@ -169,7 +169,7 @@ export default function LoginPage() {
         <div className="relative">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
           <div className="relative flex justify-center">
-            <span className="bg-card px-3 text-xs text-muted-foreground">New to DataChat?</span>
+            <span className="bg-card px-3 text-xs text-muted-foreground">New to Business Assistant?</span>
           </div>
         </div>
 

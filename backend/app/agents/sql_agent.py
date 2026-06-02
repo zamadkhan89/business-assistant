@@ -6,6 +6,7 @@ import re
 
 import sqlparse
 from langchain_core.messages import AIMessage
+from langgraph.types import interrupt
 
 from app.agents.state import AgentState
 from app.core.llm import get_llm
@@ -258,6 +259,8 @@ def sql_agent_node(state: AgentState) -> dict:
         for m in prior_messages
     ]
 
+    prior_steps = state.get("steps_taken", [])
+
     try:
         sql = generate_sql(
             user_question, schema_context, glossary_context, conversation_history, query_engine
@@ -269,7 +272,8 @@ def sql_agent_node(state: AgentState) -> dict:
             "messages": [reply],
             "draft_sql": "",
             "sql_explanation": "",
-            "steps_taken": ["sql_agent"], "current_step": "sql_error",
+            "steps_taken": prior_steps + ["sql_agent"],
+            "current_step": "sql_error",
             "error": str(exc),
         }
 
@@ -283,17 +287,69 @@ def sql_agent_node(state: AgentState) -> dict:
             "messages": [reply],
             "draft_sql": "",
             "sql_explanation": "",
-            "steps_taken": ["sql_agent"], "current_step": "sql_error",
+            "steps_taken": prior_steps + ["sql_agent"],
+            "current_step": "sql_error",
             "error": error,
         }
 
-    logger.info("[sql] SQL validated, passing to analysis agent")
+    # Generate plain-English explanation for the approval panel
+    try:
+        explanation = explain_sql(sql)
+    except Exception as exc:
+        logger.warning("[sql] explain_sql failed: %s", exc)
+        explanation = ""
+
+    # ── HITL: pause for user review (only if sql_approval_required is set) ──────
+    if not state.get("sql_approval_required", False):
+        logger.info("[sql] SQL approval not required — executing immediately")
+        return {
+            "messages": [],
+            "draft_sql": sql,
+            "sql_explanation": explanation,
+            "steps_taken": prior_steps + ["sql_agent"],
+            "current_step": "approved",
+            "error": "",
+        }
+
+    logger.info("[sql] SQL ready — pausing for HITL approval")
+    decision = interrupt({"draft_sql": sql, "sql_explanation": explanation})
+
+    action = decision.get("action", "approve")
+    logger.info("[sql] HITL decision: action=%s", action)
+
+    if action == "reject":
+        reply = AIMessage(content="Understood — query cancelled. Ask a new question whenever you're ready.")
+        return {
+            "messages": [reply],
+            "draft_sql": "",
+            "sql_explanation": "",
+            "steps_taken": prior_steps + ["sql_agent"],
+            "current_step": "done",
+            "error": "rejected",
+        }
+
+    if action == "edit":
+        edited = decision.get("edited_sql", "").strip()
+        is_valid, err = validate_sql(edited)
+        if not is_valid:
+            reply = AIMessage(content=f"The edited SQL failed validation ({err}). Please try editing again.")
+            return {
+                "messages": [reply],
+                "draft_sql": "",
+                "sql_explanation": "",
+                "steps_taken": prior_steps + ["sql_agent"],
+                "current_step": "sql_error",
+                "error": err,
+            }
+        sql = edited
+
+    # action == "approve" or valid edit — route to analysis_agent
     reply = AIMessage(content=f"Running query:\n\n```sql\n{sql}\n```")
     return {
         "messages": [reply],
         "draft_sql": sql,
-        "sql_explanation": "",
-        "steps_taken": ["sql_agent"],
+        "sql_explanation": explanation,
+        "steps_taken": prior_steps + ["sql_agent"],
         "current_step": "approved",
         "error": "",
     }

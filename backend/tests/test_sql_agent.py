@@ -134,14 +134,15 @@ def test_sql_agent_node_writes_draft_sql(mock_get_llm):
 
 
 @patch("app.agents.sql_agent.get_llm")
-def test_sql_agent_node_reply_contains_sql_fence(mock_get_llm):
+def test_sql_agent_node_no_message_when_approval_off(mock_get_llm):
+    """When sql_approval_required is False, agent skips interrupt and returns no message."""
     mock_get_llm.side_effect = lambda temperature=0.0: _mock_llm_response(_MOCK_SQL)
     state = _make_state("show me top 5 products by sales")
     result = sql_agent_node(state)
 
-    reply_content = result["messages"][-1].content
-    assert "```sql" in reply_content
-    assert _MOCK_SQL in reply_content
+    assert result["messages"] == []
+    assert result["draft_sql"] == _MOCK_SQL
+    assert result["current_step"] == "approved"
 
 
 @patch("app.agents.sql_agent.get_llm")

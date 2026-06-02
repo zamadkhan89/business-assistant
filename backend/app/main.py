@@ -1,6 +1,9 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin import router as admin_router
@@ -31,11 +34,20 @@ async def lifespan(app: FastAPI):
     if settings.POSTGRES_URL:
         try:
             _pool, checkpointer = await make_postgres_checkpointer(settings.POSTGRES_URL)
+            logger.info("[startup] PostgreSQL checkpointer ready — HITL state is persistent across restarts")
         except Exception as exc:
-            print(f"[warn] PostgreSQL checkpointer unavailable ({exc}); falling back to MemorySaver")
+            logger.warning(
+                "[startup] PostgreSQL checkpointer failed (%s) — falling back to MemorySaver. "
+                "HITL approval state WILL BE LOST on server restart. Set POSTGRES_URL to fix this.",
+                exc,
+            )
             from langgraph.checkpoint.memory import MemorySaver
             checkpointer = MemorySaver()
     else:
+        logger.warning(
+            "[startup] POSTGRES_URL not configured — using in-memory MemorySaver. "
+            "HITL approval state WILL BE LOST on server restart. Set POSTGRES_URL in .env to fix this."
+        )
         from langgraph.checkpoint.memory import MemorySaver
         checkpointer = MemorySaver()
 

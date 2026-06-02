@@ -104,7 +104,7 @@ export default function ProfilePage() {
             <div className="size-7 rounded-lg bg-primary flex items-center justify-center">
               <Sparkles className="size-4 text-primary-foreground" />
             </div>
-            <span className="font-bold tracking-tight">DataChat</span>
+            <span className="font-bold tracking-tight">Business Assistant</span>
           </div>
         </div>
       </nav>
