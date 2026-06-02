@@ -13,7 +13,7 @@
 > your explicit approval — using LangGraph's interrupt-and-resume primitive to keep a human
 > in the loop."
 
-Post-defense additions: AWS Athena cloud integration, saved queries with inline re-execution, daily routines for recurring analysis batches, and a redesigned home page with live workspace stats.
+Post-defense additions: AWS Athena cloud integration, saved queries with inline re-execution, daily routines for recurring analysis batches, redesigned home page with live workspace stats, admin panel with per-user streaming and SQL approval toggles, SSE streaming responses, and full multi-user privacy isolation.
 
 ---
 
@@ -86,6 +86,7 @@ Key fields added post-defense:
 - `athena_creds` — pre-loaded from Postgres before `ainvoke()` (Windows asyncio safety)
 - `preloaded_metadata` — pre-loaded table descriptions and KPIs (same reason)
 - `selected_datasets` — explicit dataset filter; empty means all user tables
+- `sql_approval_required` — pre-loaded from `current_user.sql_approval_required`; when false, sql_agent skips `interrupt()` and executes immediately
 
 ### Long-term memory (across requests and server restarts)
 
@@ -104,19 +105,25 @@ LangGraph's checkpointer serialises the entire `AgentState` to storage after eve
 
 ### What happens step by step
 
+HITL is **opt-in per user** — the admin enables it via the Admin Panel toggle. When disabled (default), SQL executes immediately without pausing.
+
 ```
 POST /chat { thread_id, message }
   │
   ├─ graph.ainvoke() runs supervisor → schema → sql_agent
   │
-  ├─ sql_agent calls interrupt({"draft_sql": ..., "sql_explanation": ...})
+  ├─ If sql_approval_required = false (default):
+  │    sql_agent returns draft_sql immediately → analysis_agent executes
+  │
+  ├─ If sql_approval_required = true:
+  │    sql_agent calls interrupt({"draft_sql": ..., "sql_explanation": ...})
   │    LangGraph STOPS execution here. Checkpoints state to storage.
   │    ainvoke() returns immediately with __interrupt__ in the result.
+  │    chat.py detects __interrupt__, returns:
+  │      { status: "needs_approval", draft_sql, sql_explanation }
+  │    Frontend shows amber approval panel with SQL + explanation
   │
-  ├─ chat.py detects __interrupt__, returns:
-  │    { status: "needs_approval", draft_sql, sql_explanation }
-  │
-  └─ Frontend shows amber approval panel with SQL + explanation
+  └─ User clicks Approve / Edit / Reject (only when approval is required)
 
 User clicks Approve / Edit / Reject
   │
@@ -345,8 +352,8 @@ python -m pytest          # all tests must pass
 | MemorySaver on Windows dev | ProactorEventLoop / psycopg3 incompatibility | Run on Linux or Docker |
 | No live cloud deploy | Time constraint; local demo is the fallback | Railway + Vercel config files are ready (Procfile, runtime.txt) |
 | ChromaDB rebuilt on restart | EphemeralClient; no persistence | Switch to ChromaDB's DiskClient or pgvector |
-| No streaming responses | Cut per the cut list to simplify frontend | Add SSE via `astream_events()` |
 | Athena direct: no HITL edit | Presto SQL differs from DuckDB SQL; users can't easily edit it | Add Athena-aware validation in the approval panel |
+| Settings changes require page reload | `streaming_enabled` is fetched on mount, not subscribed live | Add a WebSocket or polling refresh |
 
 ---
 
@@ -404,7 +411,7 @@ frontend/
     ThemeProvider.tsx   ← dark/light mode
     ThemeToggle.tsx
   lib/
-    auth.ts             ← NextAuth config (accessToken + isAdmin in session)
+    auth.ts             ← NextAuth config (accessToken + isAdmin + streamingEnabled + sqlApprovalRequired in session)
 
 docs/
   ARCHITECTURE.md       ← system design document
@@ -414,4 +421,4 @@ docs/
 
 ---
 
-*Updated 2026-05-26. Reflects all post-defense features.*
+*Updated 2026-06-02. Reflects all post-defense features including per-user streaming/approval toggles, admin panel improvements, and Business Assistant rebranding.*

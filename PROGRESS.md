@@ -467,3 +467,42 @@ All 14 days complete. Local demo verified. 75 tests passing. Documentation done.
 - No live cloud deploy — use local demo
 - ChromaDB rebuilt on restart — acceptable for current scale
 - No streaming responses — full response returned at end
+
+---
+
+## Post-Defense Sprint 2 — 2026-06-02
+
+### Features built
+
+#### Rename: DataChat → Business Assistant
+- [x] All frontend pages, sidebar, login, signup, home, profile, landing page updated
+- [x] Backend email templates (verification, password reset) updated
+
+#### Per-user streaming + SQL approval toggles (admin panel)
+- [x] New columns on `users` table: `streaming_enabled` (default false), `sql_approval_required` (default false)
+- [x] Migration: `ALTER TABLE users ADD COLUMN IF NOT EXISTS ...` applied to production DB
+- [x] New admin endpoint: `PATCH /api/admin/users/{id}/settings` — toggles both settings, logs to audit trail
+- [x] Admin panel UI: toggle switches for Streaming and SQL Approval in the user detail panel
+- [x] `sql_agent_node` skips `interrupt()` when `sql_approval_required` is false — executes immediately
+- [x] `sql_approval_required` pre-loaded in FastAPI and passed as initial graph state (Windows asyncio safety)
+- [x] Frontend reads live `streaming_enabled` from `/api/auth/me` on mount (bypasses stale JWT)
+- [x] `submitMessage` routes to `/chat/stream` (SSE) or `/chat` (regular POST) based on live setting
+
+#### Pipeline UI cleanup
+- [x] Removed "Pipeline" button from chat toolbar (between DatasetSelector and Upload CSV)
+- [x] Graph modal replaced: mermaid.ink (broken conditional-edge rendering) → hardcoded inline React pipeline diagram with all 4 agents properly connected
+- [x] GraphModal no longer requires `mermaid` prop; the diagram is always correct
+
+#### Chat UX improvements
+- [x] Removed duplicate "Save" button from ResultPanel tab bar — only the "Save question" link below results remains
+- [x] CSV export button icon: `Upload` (up arrow) → `Download` (down arrow)
+- [x] AI disclaimer line added below the chat input: "Business Assistant can make mistakes. Always verify important results against your source data."
+
+#### Test fix
+- [x] `test_sql_agent_node_reply_contains_sql_fence` renamed and updated: now asserts `messages == []` and `draft_sql` is set when approval is off (correct new behavior)
+- [x] All 109 tests passing (1 pre-existing failure in test_analysis_templates unrelated to our changes)
+
+### Known issues
+- MemorySaver on Windows dev — by design
+- No live cloud deploy — use local demo
+- ChromaDB rebuilt on restart — acceptable for current scale

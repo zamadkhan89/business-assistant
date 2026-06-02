@@ -5,7 +5,7 @@ Read MASTER_PROMPT.md first. This file is the short project reference.
 ## What this is
 Multi-agent conversational analytics: natural language → schema linking → SQL → HITL approval → chart.
 Four agents: Supervisor, Schema, SQL, Analysis. Built with LangGraph + FastAPI + Next.js.
-Post-defense additions: AWS Athena integration, saved queries, daily routines, multi-user isolation, table metadata, admin system.
+Post-defense additions: AWS Athena integration, saved queries, daily routines, multi-user isolation, table metadata, admin system, SSE streaming, per-user streaming/SQL-approval toggles, Business Assistant rebranding.
 
 ## Stack at a glance
 | Layer | Tech |
@@ -37,9 +37,10 @@ SQLAlchemy (asyncpg) still uses PostgreSQL for user/thread/message data.
 - [backend/app/core/llm.py](backend/app/core/llm.py) — single LLM entrypoint, never import provider SDK elsewhere
 - [backend/app/core/db.py](backend/app/core/db.py) — SQLAlchemy engine + Base + get_db
 - [backend/app/agents/graph.py](backend/app/agents/graph.py) — StateGraph + checkpointer wiring
-- [backend/app/agents/state.py](backend/app/agents/state.py) — shared TypedDict state (incl. query_engine, athena_creds, preloaded_metadata)
+- [backend/app/agents/state.py](backend/app/agents/state.py) — shared TypedDict state (incl. query_engine, athena_creds, preloaded_metadata, sql_approval_required)
 - [backend/app/agents/supervisor.py](backend/app/agents/supervisor.py) — keyword-based intent routing
-- [backend/app/api/chat.py](backend/app/api/chat.py) — POST /chat, POST /chat/resume; pre-loads glossary + Athena creds + metadata before ainvoke
+- [backend/app/api/chat.py](backend/app/api/chat.py) — POST /chat, POST /chat/resume, POST /chat/stream (SSE); pre-loads glossary + Athena creds + metadata + sql_approval_required before ainvoke
+- [backend/app/api/admin.py](backend/app/api/admin.py) — user management, PATCH /admin/users/{id}/settings (streaming_enabled, sql_approval_required), audit log
 - [backend/app/api/saved_queries.py](backend/app/api/saved_queries.py) — save/list/delete/run queries inline
 - [backend/app/api/routines.py](backend/app/api/routines.py) — routine CRUD + run all questions through LangGraph
 - [backend/app/api/athena.py](backend/app/api/athena.py) — Athena config, table listing, ingest, direct query registration
@@ -53,9 +54,14 @@ SQLAlchemy (asyncpg) still uses PostgreSQL for user/thread/message data.
 - **LLM key**: `ANTHROPIC_API_KEY` in `backend/.env`
 - **Admin**: `ADMIN_EMAILS=email1@example.com,email2@example.com` — grants global Athena config access
 
+## Per-user feature flags
+- `streaming_enabled` (User model, default false) — frontend fetches live from `/api/auth/me` on chat page mount; routes to `/chat/stream` (SSE) or `/chat` (regular POST). Do NOT read from JWT — it is stale.
+- `sql_approval_required` (User model, default false) — pre-loaded in FastAPI and passed as `AgentState.sql_approval_required`; sql_agent checks it before calling `interrupt()`.
+- Both are togglable by admin via `PATCH /api/admin/users/{id}/settings`.
+
 ## Windows asyncio rule
 **Never call `asyncio.run()` or async DB operations inside LangGraph nodes on Windows.**
-All PostgreSQL data needed by agent nodes (glossary, Athena creds, table metadata) must be pre-loaded in the async FastAPI endpoint handler and passed as initial state fields to `graph.ainvoke()`.
+All PostgreSQL data needed by agent nodes (glossary, Athena creds, table metadata, sql_approval_required) must be pre-loaded in the async FastAPI endpoint handler and passed as initial state fields to `graph.ainvoke()`.
 
 ## Multi-user isolation rules
 - Schema agent must call `describe_user_tables(user_id)` — never `describe_all_tables()`

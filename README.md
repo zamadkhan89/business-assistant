@@ -219,10 +219,12 @@ business-assistant/
 - **Daily Routines**: define a named set of questions, run all of them at once, view results side by side
 
 ### Platform
-- Sign up / log in with JWT-secured accounts
+- Sign up / log in with JWT-secured accounts (email verification, login rate limiting)
 - Dark / light mode toggle
 - Browse conversation history in the sidebar
-- Admin system — `ADMIN_EMAILS` env var grants admin access for shared Athena credentials
+- Admin panel — manage users, storage quotas, block/unblock, audit log, and per-user feature toggles:
+  - **Streaming** — enables SSE live step-progress for a user (default: off)
+  - **SQL Approval** — requires HITL review before SQL executes (default: off)
 - Multi-user privacy isolation — each user's data, uploads, glossary, and Athena config are fully separate
 
 ## Security
@@ -241,5 +243,5 @@ business-assistant/
 - OAuth via NextAuth (Google, GitHub)
 - LangSmith integration for observability and tracing
 - Anomaly / trend detection agent (5th specialist)
-- Scheduled query reports + email delivery
-- SSE streaming for real-time token output
+- Scheduled query reports + email delivery via AWS Lambda / EventBridge
+- Live streaming of token output (current SSE streams step events, not tokens)
