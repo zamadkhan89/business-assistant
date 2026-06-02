@@ -55,14 +55,51 @@ Post-defense additions: AWS Athena cloud integration, saved queries with inline 
 
 ## 2. The Two Primary Databases — Know This Cold
 
-| Database | What it stores | Why this database |
-|---|---|---|
-| **PostgreSQL** | Users, threads, messages, glossary entries, saved queries, routines, Athena config, table metadata, LangGraph checkpoints | Relational, transactional, required by LangGraph's PostgresSaver |
-| **DuckDB** | Business data (Northwind sample + user CSV uploads + Athena ingested tables) | In-process, columnar, SQL-compatible with AWS Athena |
+**Rule: these two databases never store each other's data.** One handles operational/auth data, the other handles analytical queries.
 
-**They never store each other's data.** If asked "why two databases?" — the answer is separation of concerns: one handles operational/auth data, the other handles analytical queries.
+### PostgreSQL — operational database
 
-DuckDB stores its data in `backend/business_assistant.db`. It is a single file — no server process needed.
+Everything about users, conversations, and configuration lives here.
+
+| Table | What it stores |
+|---|---|
+| `users` | Accounts — email, password hash, admin/blocked status, streaming & SQL approval settings |
+| `threads` | Conversation sessions (id, user_id, title, timestamps) |
+| `messages` | Every message with metadata (chart JSON, executed SQL, agent steps) |
+| `glossary_entries` | User-defined business term definitions |
+| `saved_queries` | Bookmarked questions with stored SQL and results |
+| `routines` | Named sets of recurring questions |
+| `athena_configs` | AWS credentials per user; global config uses `user_id=NULL, is_global=TRUE` |
+| `table_metadata` | Table descriptions, business context, display names, join hints |
+| `column_metadata` | Column descriptions, KPI definitions, sample values |
+| `admin_audit_log` | Every admin action with timestamp and actor |
+| `email_verification_tokens` | Short-lived email verification codes |
+| `password_reset_tokens` | Short-lived password reset tokens |
+
+**Why PostgreSQL?** Relational, transactional, required by LangGraph's `AsyncPostgresSaver` checkpointer.
+
+---
+
+### DuckDB — analytical database
+
+Only business/analytical data lives here. No user accounts, no auth, no conversation history.
+
+| Table | What it stores |
+|---|---|
+| `customers` | Northwind sample customers (built-in seed data) |
+| `products` | Northwind sample products (built-in seed data) |
+| `orders` | Northwind sample orders (built-in seed data) |
+| `order_items` | Northwind sample order line items (built-in seed data) |
+| `u{prefix}_{name}` | User-uploaded CSV tables — e.g. `u6c06a166_car_prices` |
+| `_dataset_ownership` | Tracks which `user_id` owns each uploaded table (data isolation) |
+| `_athena_direct_refs` | Tables registered for direct Athena query (schema only, no data) |
+| `_dataset_athena_meta` | Metadata for Athena-ingested tables |
+
+**Why DuckDB?** In-process, columnar, fast for analytical queries, SQL-compatible with AWS Athena.
+
+DuckDB is a single file at `backend/business_assistant.db` — no server process needed.
+
+> **Note on `_dataset_ownership`:** This is a DuckDB tracking table — it stores `user_id` strings to enforce data isolation. It is NOT the same as the `users` table in PostgreSQL. It only stores the UUID string, not any user details.
 
 ---
 
