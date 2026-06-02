@@ -29,11 +29,12 @@ def _get_athena_creds_sync(user_id: str, cred_source: str) -> dict | None:
             from sqlalchemy import select
             from app.core.db import AsyncSessionLocal
             from app.models.athena_config import AthenaConfig
-            _GLOBAL_ID = "__global__"
-            owner_id = user_id if cred_source == "personal" else _GLOBAL_ID
+            is_global = cred_source != "personal"
             async with AsyncSessionLocal() as db:
                 result = await db.execute(
-                    select(AthenaConfig).where(AthenaConfig.user_id == owner_id)
+                    select(AthenaConfig).where(
+                        AthenaConfig.is_global == True if is_global else AthenaConfig.user_id == user_id  # noqa: E712
+                    )
                 )
                 cfg = result.scalar_one_or_none()
                 if cfg:

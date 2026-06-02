@@ -191,9 +191,12 @@ async def chat(
     try:
         import json as _json
         from app.models.athena_config import AthenaConfig
-        _GLOBAL_ID = "__global__"
-        for owner_id, source_key in [(current_user.id, "personal"), (_GLOBAL_ID, "global")]:
-            row = await db.execute(select(AthenaConfig).where(AthenaConfig.user_id == owner_id))
+        for owner_id, source_key, is_global in [(current_user.id, "personal", False), (None, "global", True)]:
+            row = await db.execute(
+                select(AthenaConfig).where(
+                    AthenaConfig.is_global == True if is_global else AthenaConfig.user_id == owner_id  # noqa: E712
+                )
+            )
             cfg = row.scalar_one_or_none()
             if cfg and cfg.aws_access_key_id and cfg.aws_secret_access_key:
                 athena_creds[source_key] = {
@@ -458,9 +461,12 @@ async def chat_stream(
     try:
         import json as _json
         from app.models.athena_config import AthenaConfig
-        _GLOBAL_ID = "__global__"
-        for owner_id, source_key in [(current_user.id, "personal"), (_GLOBAL_ID, "global")]:
-            row = await db.execute(select(AthenaConfig).where(AthenaConfig.user_id == owner_id))
+        for owner_id, source_key, is_global in [(current_user.id, "personal", False), (None, "global", True)]:
+            row = await db.execute(
+                select(AthenaConfig).where(
+                    AthenaConfig.is_global == True if is_global else AthenaConfig.user_id == owner_id  # noqa: E712
+                )
+            )
             cfg = row.scalar_one_or_none()
             if cfg and cfg.aws_access_key_id and cfg.aws_secret_access_key:
                 athena_creds[source_key] = {

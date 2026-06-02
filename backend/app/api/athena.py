@@ -40,7 +40,6 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/athena", tags=["athena"])
 
-_GLOBAL_ID = "__global__"
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -95,6 +94,24 @@ async def _fetch_cfg(owner_id: str, db: AsyncSession) -> AthenaConfig | None:
     return result.scalar_one_or_none()
 
 
+async def _fetch_global_cfg(db: AsyncSession) -> AthenaConfig | None:
+    result = await db.execute(select(AthenaConfig).where(AthenaConfig.is_global == True))  # noqa: E712
+    return result.scalar_one_or_none()
+
+
+async def _upsert_global_cfg(body: AthenaConfigIn, db: AsyncSession) -> AthenaConfig:
+    cfg = await _fetch_global_cfg(db)
+    if cfg is None:
+        cfg = AthenaConfig(is_global=True, user_id=None, **body.model_dump())
+        db.add(cfg)
+    else:
+        for k, v in body.model_dump().items():
+            setattr(cfg, k, v)
+    await db.commit()
+    await db.refresh(cfg)
+    return cfg
+
+
 async def _resolve_all_creds(user_id: str, db: AsyncSession) -> list[dict]:
     """
     Return all active credential sets for this user, each tagged with 'source'.
@@ -109,7 +126,7 @@ async def _resolve_all_creds(user_id: str, db: AsyncSession) -> list[dict]:
     if personal and personal.aws_access_key_id and personal.aws_secret_access_key:
         result.append({**_row_to_dict(personal), "source": "personal"})
 
-    shared = await _fetch_cfg(_GLOBAL_ID, db)
+    shared = await _fetch_global_cfg(db)
     if shared and shared.aws_access_key_id and shared.aws_secret_access_key:
         result.append({**_row_to_dict(shared), "source": "global"})
 
@@ -230,7 +247,7 @@ async def get_global_config(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    cfg = await _fetch_cfg(_GLOBAL_ID, db)
+    cfg = await _fetch_global_cfg(db)
     if cfg is None:
         raise HTTPException(status_code=404, detail="No global Athena config saved yet")
     return _row_to_out(cfg)
@@ -245,7 +262,7 @@ async def save_global_config(
     _require_admin(current_user)
     if not body.aws_access_key_id.strip() or not body.aws_secret_access_key.strip():
         raise HTTPException(status_code=400, detail="Access Key ID and Secret are required")
-    cfg = await _upsert_cfg(_GLOBAL_ID, body, db)
+    cfg = await _upsert_global_cfg(body, db)
     return _row_to_out(cfg)
 
 
@@ -255,7 +272,7 @@ async def delete_global_config(
     db: AsyncSession = Depends(get_db),
 ):
     _require_admin(current_user)
-    cfg = await _fetch_cfg(_GLOBAL_ID, db)
+    cfg = await _fetch_global_cfg(db)
     if cfg:
         await db.delete(cfg)
         await db.commit()
