@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 
 import sqlparse
 from langchain_core.messages import AIMessage
@@ -126,13 +127,32 @@ def _fix_sql(sql: str, error: str, question: str, schema_text: str) -> str:
         f"Schema:\n{schema_text}"
     )
     try:
-        raw = get_llm(temperature=0.0).invoke(prompt).content
+        raw = _invoke_llm(prompt, temperature=0.0)
         fixed = _extract_sql(raw)
         logger.info("[sql] LLM-fixed SQL: %s", fixed[:120])
         return fixed or sql
     except Exception as exc:
         logger.warning("[sql] _fix_sql failed: %s", exc)
         return sql
+
+
+def _invoke_llm(prompt: str, temperature: float = 0.0, retries: int = 2) -> str:
+    """Call the LLM with automatic retry on transient connection errors."""
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 2):
+        try:
+            return get_llm(temperature=temperature).invoke(prompt).content
+        except Exception as exc:
+            msg = str(exc).lower()
+            if any(kw in msg for kw in ("connection", "timeout", "network", "retry", "503", "502")):
+                last_exc = exc
+                if attempt <= retries:
+                    wait = attempt * 2
+                    logger.warning("[llm] Transient error (attempt %d/%d): %s — retrying in %ds", attempt, retries + 1, exc, wait)
+                    time.sleep(wait)
+                    continue
+            raise
+    raise RuntimeError("AI service temporarily unavailable. Please try again.") from last_exc
 
 
 def generate_sql(
@@ -207,7 +227,7 @@ def generate_sql(
     )
 
     logger.info("[sql] Generating SQL (engine=%s) for: %s", query_engine, question[:80])
-    raw = get_llm(temperature=0.0).invoke(prompt).content
+    raw = _invoke_llm(prompt, temperature=0.0)
     sql = _extract_sql(raw)
     logger.info("[sql] Initial SQL: %s", sql[:120])
 
@@ -239,7 +259,7 @@ def explain_sql(sql: str) -> str:
         "Explain the following SQL query in 1-2 plain English sentences. "
         "Be concise and focus on what business question it answers.\n\nSQL:\n" + sql
     )
-    explanation = get_llm(temperature=0.3).invoke(prompt).content.strip()
+    explanation = _invoke_llm(prompt, temperature=0.3).strip()
     logger.info("[sql] Explanation: %s", explanation[:100])
     return explanation
 
