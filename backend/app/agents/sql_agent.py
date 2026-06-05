@@ -35,7 +35,7 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     if not parsed:
         return False, "Could not parse SQL"
     stmt_type = parsed[0].get_type()
-    if stmt_type and stmt_type.upper() != "SELECT":
+    if stmt_type and stmt_type.upper() not in ("SELECT", "UNKNOWN"):
         return False, f"Only SELECT statements are allowed, got: {stmt_type}"
     return True, ""
 
