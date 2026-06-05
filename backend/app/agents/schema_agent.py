@@ -40,9 +40,18 @@ def _build_chroma_docs(
     docs, ids, metas = [], [], []
     for table_name, info in user_tables.items():
         cols = ", ".join(c["column"] for c in info.get("schema", []))
-        docs.append(f"Table {table_name}: columns are {cols}")
-        ids.append(table_name)
-        metas.append({"user_id": user_id})
+        # Include sample values so embeddings are semantically richer than column names alone
+        sample = info.get("sample", [])
+        sample_text = ""
+        if sample:
+            first = sample[0]
+            sample_text = " Sample values: " + ", ".join(
+                f"{k}={v!r}" for k, v in list(first.items())[:6]
+            )
+        docs.append(f"Table {table_name}: columns are {cols}.{sample_text}")
+        # Prefix ID with user_id so two users' tables with the same name never collide
+        ids.append(f"{user_id}__{table_name}")
+        metas.append({"user_id": user_id, "table_name": table_name})
     return docs, ids, metas
 
 
@@ -78,7 +87,12 @@ def search_schema(
                 n_results=min(n_results, max(1, len(user_tables))),
                 where={"user_id": user_id},  # hard filter: only this user's tables
             )
-            relevant_names = results["ids"][0]
+            # IDs are stored as "{user_id}__{table_name}" — strip the prefix
+            prefix = f"{user_id}__"
+            relevant_names = [
+                rid[len(prefix):] if rid.startswith(prefix) else rid
+                for rid in results["ids"][0]
+            ]
             filtered = {name: user_tables[name] for name in relevant_names if name in user_tables}
             if filtered:
                 return filtered
