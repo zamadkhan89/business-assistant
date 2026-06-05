@@ -1396,7 +1396,7 @@ export default function ChatPage() {
             </Button>
           </form>
           <p className="text-center text-xs text-muted-foreground mt-1.5">Enter to send · Shift+Enter for new line</p>
-          <p className="text-center text-xs text-muted-foreground mt-1">Business Assistant can make mistakes. Always verify important results against your source data.</p>
+          <p className="text-center text-xs text-muted-foreground mt-1">Business Assistant is AI and can make mistakes. Please double-check responses.</p>
         </div>
       </div>
     </div>
