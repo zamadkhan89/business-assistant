@@ -31,9 +31,12 @@ export default function DatasetsPage() {
   const fetchDatasets = useCallback(async () => {
     try {
       const r = await fetch(`${BACKEND}/api/datasets`, { headers: authHeader })
-      if (r.ok) setDatasets(await r.json())
+      if (r.ok) {
+        const data = await r.json()
+        setDatasets(data)
+      }
     } catch {
-      setError("Could not load datasets")
+      // Silent on initial load — empty state guides the user to upload
     } finally {
       setLoading(false)
     }

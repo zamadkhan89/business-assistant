@@ -1395,8 +1395,8 @@ export default function ChatPage() {
               Send
             </Button>
           </form>
-          <p className="text-center text-[10px] text-muted-foreground/40 mt-1.5">Enter to send · Shift+Enter for new line · Cmd+Enter also sends</p>
-          <p className="text-center text-[10px] text-muted-foreground/40 mt-0.5">Business Assistant can make mistakes. Always verify important results against your source data.</p>
+          <p className="text-center text-xs text-muted-foreground mt-1.5">Enter to send · Shift+Enter for new line</p>
+          <p className="text-center text-xs text-muted-foreground mt-1">Business Assistant can make mistakes. Always verify important results against your source data.</p>
         </div>
       </div>
     </div>

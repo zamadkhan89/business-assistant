@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class AdminAuditLog(Base):
@@ -26,5 +32,5 @@ class AdminAuditLog(Base):
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
-    admin: Mapped["User"] = relationship("User", foreign_keys=[admin_id])  # type: ignore[name-defined]
-    target_user: Mapped["User | None"] = relationship("User", foreign_keys=[target_user_id])  # type: ignore[name-defined]
+    admin: Mapped[User] = relationship("User", foreign_keys=[admin_id])
+    target_user: Mapped[User | None] = relationship("User", foreign_keys=[target_user_id])

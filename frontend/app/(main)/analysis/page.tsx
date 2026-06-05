@@ -96,12 +96,51 @@ const TEMPLATES = [
   },
 ]
 
+const STAT_TIPS: Record<string, string> = {
+  "mean":         "Average — sum of all values ÷ count",
+  "median":       "Middle value when sorted; half the data is above, half below",
+  "std dev":      "Standard deviation — how spread out values are from the mean",
+  "std":          "Standard deviation — how spread out values are from the mean",
+  "stddev":       "Standard deviation — how spread out values are from the mean",
+  "variance":     "Average squared distance from the mean; square of std dev",
+  "min":          "Smallest value in the column",
+  "max":          "Largest value in the column",
+  "q1":           "Lower quartile — 25% of values fall below this",
+  "q2":           "Median — 50% of values fall below this",
+  "q3":           "Upper quartile — 75% of values fall below this",
+  "iqr":          "Interquartile range — Q3 minus Q1; measures the middle 50% spread",
+  "skewness":     "Asymmetry of the distribution — 0 = symmetric, positive = long right tail, negative = long left tail",
+  "skew":         "Asymmetry of the distribution — 0 = symmetric, positive = long right tail, negative = long left tail",
+  "kurtosis":     "Tail heaviness — high value means more extreme outliers than a normal distribution",
+  "count":        "Total number of rows (including nulls)",
+  "null count":   "Number of missing (empty) values in this column",
+  "nulls":        "Number of missing (empty) values in this column",
+  "null %":       "Percentage of rows with a missing value",
+  "unique":       "Number of distinct different values in this column",
+  "unique count": "Number of distinct different values in this column",
+  "cv":           "Coefficient of variation — std dev as a % of the mean; measures relative spread",
+  "outliers":     "Rows where the value falls more than 1.5 × IQR outside Q1 or Q3",
+  "correlation":  "Pearson r — strength of linear relationship; +1 = perfect positive, −1 = perfect negative, 0 = none",
+}
+
+function StatTip({ label }: { label: string }) {
+  const tip = STAT_TIPS[label.toLowerCase()]
+  if (!tip) return null
+  return (
+    <span title={tip} className="ml-1 inline-flex cursor-help">
+      <Info className="size-3 text-muted-foreground/50 hover:text-muted-foreground transition-colors" />
+    </span>
+  )
+}
+
 function StatsSection({ stats }: { stats: Record<string, string> }) {
   return (
     <div className="flex flex-wrap gap-3">
       {Object.entries(stats).map(([k, v]) => (
         <div key={k} className="bg-muted/50 border border-border rounded-xl px-4 py-3 min-w-32">
-          <p className="text-xs text-muted-foreground mb-0.5">{k}</p>
+          <p className="text-xs text-muted-foreground mb-0.5 flex items-center">
+            {k}<StatTip label={k} />
+          </p>
           <p className="text-xl font-bold tabular-nums">{v}</p>
         </div>
       ))}
@@ -118,7 +157,16 @@ function TableSection({ data }: { data: Record<string, unknown>[] }) {
         <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
           <tr>
             {cols.map((c) => (
-              <th key={c} className="px-3 py-2 text-left font-semibold border-b border-border whitespace-nowrap">{c}</th>
+              <th key={c} className="px-3 py-2 text-left font-semibold border-b border-border whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  {c}
+                  {STAT_TIPS[c.toLowerCase()] && (
+                    <span title={STAT_TIPS[c.toLowerCase()]} className="cursor-help inline-flex">
+                      <Info className="size-3 text-muted-foreground/50 hover:text-muted-foreground transition-colors" />
+                    </span>
+                  )}
+                </span>
+              </th>
             ))}
           </tr>
         </thead>
