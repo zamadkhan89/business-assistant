@@ -187,9 +187,7 @@ business-assistant/
 │   └── lib/auth.ts
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   ├── DEMO_SCRIPT.md
-│   └── SLIDES.md
-├── MASTER_PROMPT.md
+│   └── DEMO_SCRIPT.md
 └── ONBOARDING.md
 ```
 

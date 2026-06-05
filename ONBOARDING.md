@@ -23,8 +23,6 @@ There are several documents in this project. Each has a different purpose. Here 
 
 | Document | Use it when… |
 |---|---|
-| [`MASTER_PROMPT.md`](MASTER_PROMPT.md) | You want to understand the original 14-day build plan, locked architectural decisions, and the "why" behind major choices |
-| [`docs/SLIDES.md`](docs/SLIDES.md) | You are preparing a presentation or defense — contains 8 slides with speaker notes and timing |
 | [`CLAUDE.md`](CLAUDE.md) | You are starting a Claude Code AI session — this is the machine-readable project brief that Claude reads first |
 
 ### What each document does NOT cover
@@ -576,7 +574,7 @@ frontend/
 docs/
   ARCHITECTURE.md       ← system design document
   DEMO_SCRIPT.md        ← timed demo with Q&A
-  SLIDES.md             ← defense slides with speaking notes
+
 ```
 
 ---
